@@ -1,0 +1,10 @@
+{
+  "name": "fenergo-mcp-server",
+  "version": "1.0.0",
+  "description": "Fenergo Nebula MCP Server for ChatGPT",
+  "main": "api/mcp.js",
+  "dependencies": {},
+  "engines": {
+    "node": "18.x"
+  }
+}

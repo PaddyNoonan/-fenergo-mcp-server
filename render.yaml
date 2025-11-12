@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: fenergo-mcp-server
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node chatgpt-mcp-server.js
+    envVars:
+      - key: FENERGO_API_TOKEN
+        sync: false
+      - key: FENERGO_TENANT_ID
+        value: f488cdba-2122-448d-952c-7a2a47f78f1b
+      - key: PORT
+        value: 3000
