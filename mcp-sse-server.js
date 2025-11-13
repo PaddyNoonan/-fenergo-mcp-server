@@ -118,6 +118,11 @@ const server = http.createServer(async (req, res) => {
     });
     return;
   }
+  if (req.url === '/mcp' && req.method === 'GET') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ status: 'ok', message: 'MCP endpoint is reachable.' }));
+    return;
+  }
   // Health check
   if (req.url === '/health' && req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
