@@ -94,7 +94,20 @@ const server = http.createServer(async (req, res) => {
             }
           };
         }
+          // Debug logging: print outgoing request
+          console.log("[DEBUG] Fenergo API Request:", {
+            url: 'https://api.fenxstable.com/documentmanagementquery/api/documentmanagement/insights',
+            headers: {
+              Authorization: FENERGO_API_TOKEN,
+              'Content-Type': 'application/json',
+              'X-Tenant-Id': FENERGO_TENANT_ID,
+              Accept: 'application/json'
+            },
+            payload: payload
+          });
         const apiResponse = await callFenergoAPI(payload);
+          // Debug logging: print raw response
+          console.log("[DEBUG] Fenergo API Raw Response:", apiResponse.data);
         // Send MCP response as SSE
         res.write(`event: result\ndata: ${JSON.stringify({ result: apiResponse.data?.data?.response || 'No data returned', metadata: apiResponse.data?.data?.metadata || {} })}\n\n`);
         res.end();
