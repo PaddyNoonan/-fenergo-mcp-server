@@ -25,6 +25,66 @@ console.log(`🏢 Tenant: ${FENERGO_TENANT_ID}`);
 
 // HTTP Server
 const server = http.createServer(async (req, res) => {
+  // MCP protocol tool execution endpoint for ChatGPT
+  if (req.url === '/mcp' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => body += chunk);
+    req.on('end', async () => {
+      try {
+        const request = JSON.parse(body);
+        const { tool, parameters } = request;
+        if (tool !== 'investigate_journey') {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Unknown tool' }));
+          return;
+        }
+        const { journeyId, query, scope } = parameters;
+        // Build Fenergo API payload
+        let payload;
+        if (scope === 'documents') {
+          payload = {
+            data: {
+              message: query,
+              scope: {
+                documentContext: {
+                  contextLevel: 'Journey',
+                  contextId: journeyId
+                },
+                documentRequirementContext: null
+              },
+              conversationHistory: []
+            }
+          };
+        } else {
+          payload = {
+            data: {
+              message: query,
+              scope: {
+                documentContext: null,
+                documentRequirementContext: {
+                  contextLevel: 'Journey',
+                  contextId: journeyId
+                }
+              },
+              conversationHistory: []
+            }
+          };
+        }
+        // Call Fenergo API
+        const apiResponse = await callFenergoAPI(payload);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          result: apiResponse.data?.data?.response || 'No data returned',
+          metadata: apiResponse.data?.data?.metadata || {}
+        }));
+      } catch (error) {
+        console.error('MCP POST /mcp error:', error);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: error.message }));
+      }
+    });
+    return;
+  }
   // CORS headers for ChatGPT
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
