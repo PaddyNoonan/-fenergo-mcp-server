@@ -40,6 +40,13 @@ const server = http.createServer(async (req, res) => {
   // No authentication required - token is in environment
   console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
 
+  // MCP protocol endpoint for ChatGPT
+  if (req.url === '/mcp' && req.method === 'GET') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ status: 'ok', message: 'MCP endpoint is reachable.' }));
+    return;
+  }
+
   // Root endpoint - MCP server info
   if (req.url === '/' && req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
