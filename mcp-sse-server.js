@@ -43,6 +43,25 @@ function callFenergoAPI(payload) {
 }
 
 const server = http.createServer(async (req, res) => {
+  if (req.url === '/mcp' && req.method === 'OPTIONS') {
+    res.writeHead(200, {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET,POST,OPTIONS,HEAD',
+      'Access-Control-Allow-Headers': 'Content-Type,Authorization'
+    });
+    res.end(JSON.stringify({ status: 'ok', message: 'OPTIONS supported.' }));
+    return;
+  }
+  if (req.url === '/mcp' && req.method === 'HEAD') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end();
+    return;
+  }
+  // Log every incoming request for debugging
+  console.log(`[INCOMING REQUEST] ${req.method} ${req.url}`);
+  console.log('[HEADERS]', req.headers);
+
   if (req.url === '/mcp' && req.method === 'POST') {
     // SSE headers
     res.writeHead(200, {
