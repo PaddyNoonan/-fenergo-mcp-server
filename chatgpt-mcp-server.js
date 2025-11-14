@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 
+
 // ChatGPT MCP HTTP Server for Fenergo Nebula API
 // Exposes MCP protocol over HTTP for ChatGPT Enterprise
 
 import http from 'http';
 import https from 'https';
+import fs from 'fs';
+import path from 'path';
 
 const PORT = process.env.PORT || 8080;
 
@@ -23,10 +26,9 @@ console.log('🚀 Starting Fenergo MCP Server for ChatGPT...');
 console.log(`📍 API Base: ${FENERGO_API_BASE}`);
 console.log(`🏢 Tenant: ${FENERGO_TENANT_ID}`);
 console.log(`🗂️  Current working directory: ${process.cwd()}`);
-const fsTest = require('fs');
 try {
-  const openapiPath = require('path').join(__dirname, 'chatgpt-openapi-spec.yaml');
-  if (fsTest.existsSync(openapiPath)) {
+  const openapiPath = path.join(__dirname, 'chatgpt-openapi-spec.yaml');
+  if (fs.existsSync(openapiPath)) {
     console.log('✅ OpenAPI spec found at', openapiPath);
   } else {
     console.error('❌ OpenAPI spec NOT found at', openapiPath);
@@ -40,12 +42,11 @@ const server = http.createServer(async (req, res) => {
       // Serve OpenAPI YAML and JSON for MCP connector compatibility
       // NOTE: Requires 'js-yaml' to be installed (npm install js-yaml)
       if ((req.url === '/openapi.yaml' || req.url === '/openapi.json') && req.method === 'GET') {
-        const fs = require('fs');
-        const path = require('path').join(__dirname, 'chatgpt-openapi-spec.yaml');
-        console.log(`[OpenAPI] Request for ${req.url} - looking for file at:`, path);
-        fs.readFile(path, 'utf8', (err, data) => {
+        const openapiPath = path.join(__dirname, 'chatgpt-openapi-spec.yaml');
+        console.log(`[OpenAPI] Request for ${req.url} - looking for file at:`, openapiPath);
+        fs.readFile(openapiPath, 'utf8', async (err, data) => {
           if (err) {
-            console.error(`[OpenAPI] File read error for ${path}:`, err);
+            console.error(`[OpenAPI] File read error for ${openapiPath}:`, err);
             res.writeHead(404, { 'Content-Type': 'text/plain' });
             res.end('OpenAPI spec not found');
             return;
@@ -53,7 +54,7 @@ const server = http.createServer(async (req, res) => {
           // If .json requested, try to convert YAML to JSON
           if (req.url.endsWith('.json')) {
             try {
-              const yaml = require('js-yaml');
+              const yaml = (await import('js-yaml')).default;
               const json = yaml.load(data);
               res.writeHead(200, { 'Content-Type': 'application/json' });
               res.end(JSON.stringify(json, null, 2));
