@@ -25,6 +25,34 @@ console.log(`🏢 Tenant: ${FENERGO_TENANT_ID}`);
 
 // HTTP Server
 const server = http.createServer(async (req, res) => {
+      // Serve OpenAPI YAML and JSON for MCP connector compatibility
+      if ((req.url === '/openapi.yaml' || req.url === '/openapi.json') && req.method === 'GET') {
+        const fs = await import('fs');
+        const path = req.url.endsWith('.json') ? './chatgpt-openapi-spec.yaml' : './chatgpt-openapi-spec.yaml';
+        fs.readFile(path, 'utf8', (err, data) => {
+          if (err) {
+            res.writeHead(404, { 'Content-Type': 'text/plain' });
+            res.end('OpenAPI spec not found');
+            return;
+          }
+          // If .json requested, try to convert YAML to JSON
+          if (req.url.endsWith('.json')) {
+            try {
+              const yaml = require('js-yaml');
+              const json = yaml.load(data);
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify(json, null, 2));
+            } catch (e) {
+              res.writeHead(500, { 'Content-Type': 'text/plain' });
+              res.end('Failed to convert OpenAPI YAML to JSON');
+            }
+          } else {
+            res.writeHead(200, { 'Content-Type': 'text/yaml' });
+            res.end(data);
+          }
+        });
+        return;
+      }
     // Log all requests
     let rawBody = '';
     req.on('data', chunk => rawBody += chunk);
