@@ -22,16 +22,30 @@ if (!FENERGO_API_TOKEN) {
 console.log('🚀 Starting Fenergo MCP Server for ChatGPT...');
 console.log(`📍 API Base: ${FENERGO_API_BASE}`);
 console.log(`🏢 Tenant: ${FENERGO_TENANT_ID}`);
+console.log(`🗂️  Current working directory: ${process.cwd()}`);
+const fsTest = require('fs');
+try {
+  const openapiPath = require('path').join(__dirname, 'chatgpt-openapi-spec.yaml');
+  if (fsTest.existsSync(openapiPath)) {
+    console.log('✅ OpenAPI spec found at', openapiPath);
+  } else {
+    console.error('❌ OpenAPI spec NOT found at', openapiPath);
+  }
+} catch (e) {
+  console.error('❌ Error checking OpenAPI spec:', e);
+}
 
 // HTTP Server
 const server = http.createServer(async (req, res) => {
       // Serve OpenAPI YAML and JSON for MCP connector compatibility
       // NOTE: Requires 'js-yaml' to be installed (npm install js-yaml)
       if ((req.url === '/openapi.yaml' || req.url === '/openapi.json') && req.method === 'GET') {
-        const fs = await import('fs');
+        const fs = require('fs');
         const path = require('path').join(__dirname, 'chatgpt-openapi-spec.yaml');
+        console.log(`[OpenAPI] Request for ${req.url} - looking for file at:`, path);
         fs.readFile(path, 'utf8', (err, data) => {
           if (err) {
+            console.error(`[OpenAPI] File read error for ${path}:`, err);
             res.writeHead(404, { 'Content-Type': 'text/plain' });
             res.end('OpenAPI spec not found');
             return;
@@ -43,13 +57,16 @@ const server = http.createServer(async (req, res) => {
               const json = yaml.load(data);
               res.writeHead(200, { 'Content-Type': 'application/json' });
               res.end(JSON.stringify(json, null, 2));
+              console.log('[OpenAPI] Served JSON spec successfully.');
             } catch (e) {
+              console.error('[OpenAPI] YAML to JSON conversion error:', e);
               res.writeHead(500, { 'Content-Type': 'text/plain' });
               res.end('Failed to convert OpenAPI YAML to JSON');
             }
           } else {
             res.writeHead(200, { 'Content-Type': 'text/yaml' });
             res.end(data);
+            console.log('[OpenAPI] Served YAML spec successfully.');
           }
         });
         return;
