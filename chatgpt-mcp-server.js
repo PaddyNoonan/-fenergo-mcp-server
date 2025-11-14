@@ -130,19 +130,10 @@ const server = http.createServer(async (req, res) => {
             if (request.jsonrpc === '2.0' && request.method === 'initialize') {
               // Respond with protocol info
               const result = {
-                protocolVersion: '2024-01-01',
-                server: {
-                  name: 'Fenergo Nebula MCP Server',
-                  version: '1.0.0',
-                  endpoints: {
-                    health: '/health',
-                    tools: '/tools',
-                    execute: '/execute',
-                    updateToken: '/update-token'
-                  }
-                },
-                tools: mcpTools,
-                capabilities: {} // must be an object
+                protocolVersion: "2025-06-18",
+                capabilities: {},
+                serverInfo: { name: "Fenergo Nebula MCP Server", version: "1.0.0" } 
+                
               };
               return { jsonrpc: '2.0', id: request.id, result };
             }
