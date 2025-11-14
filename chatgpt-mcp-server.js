@@ -26,9 +26,10 @@ console.log(`🏢 Tenant: ${FENERGO_TENANT_ID}`);
 // HTTP Server
 const server = http.createServer(async (req, res) => {
       // Serve OpenAPI YAML and JSON for MCP connector compatibility
+      // NOTE: Requires 'js-yaml' to be installed (npm install js-yaml)
       if ((req.url === '/openapi.yaml' || req.url === '/openapi.json') && req.method === 'GET') {
         const fs = await import('fs');
-        const path = req.url.endsWith('.json') ? './chatgpt-openapi-spec.yaml' : './chatgpt-openapi-spec.yaml';
+        const path = require('path').join(__dirname, 'chatgpt-openapi-spec.yaml');
         fs.readFile(path, 'utf8', (err, data) => {
           if (err) {
             res.writeHead(404, { 'Content-Type': 'text/plain' });
