@@ -55,8 +55,10 @@ const server = http.createServer(async (req, res) => {
   // MCP protocol tool execution endpoint for ChatGPT
   if (req.url === '/mcp' && req.method === 'POST') {
     let body = '';
+    console.log(`[${new Date().toISOString()}] /mcp POST request received from ${req.socket.remoteAddress}`);
     req.on('data', chunk => body += chunk);
     req.on('end', async () => {
+      console.log(`[${new Date().toISOString()}] /mcp POST raw body:`, body);
               // JSON-RPC tools/list support
               if (request.jsonrpc === '2.0' && (request.method === 'tools/list' || request.method === 'listTools')) {
                 res.writeHead(200, { 'Content-Type': 'application/json' });
