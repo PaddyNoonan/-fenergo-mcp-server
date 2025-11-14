@@ -59,14 +59,14 @@ const server = http.createServer(async (req, res) => {
     req.on('data', chunk => body += chunk);
     req.on('end', async () => {
       console.log(`[${new Date().toISOString()}] /mcp POST raw body:`, body);
-              // JSON-RPC tools/list support
-              if (request.jsonrpc === '2.0' && (request.method === 'tools/list' || request.method === 'listTools')) {
-                res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ jsonrpc: '2.0', id: request.id, result: mcpTools }));
-                return;
-              }
       try {
         const request = JSON.parse(body);
+        // JSON-RPC tools/list support (must be after request is defined)
+        if (request.jsonrpc === '2.0' && (request.method === 'tools/list' || request.method === 'listTools')) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ jsonrpc: '2.0', id: request.id, result: mcpTools }));
+          return;
+        }
         // JSON-RPC 2.0 support
         if (request.jsonrpc === '2.0' && request.method === 'initialize') {
           // Respond with protocol info
