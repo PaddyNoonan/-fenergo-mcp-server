@@ -4,5 +4,5 @@ COPY package*.json ./
 RUN npm install
 COPY . .
 COPY chatgpt-openapi-spec.yaml ./
-EXPOSE 3000
+EXPOSE 8080
 CMD ["node", "chatgpt-mcp-server.js"]

@@ -6,7 +6,7 @@
 import http from 'http';
 import https from 'https';
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8080;
 
 // Configuration from environment (mutable for token refresh)
 let FENERGO_API_TOKEN = process.env.FENERGO_API_TOKEN;
