@@ -64,7 +64,7 @@ const server = http.createServer(async (req, res) => {
         // JSON-RPC tools/list support (must be after request is defined)
         if (request.jsonrpc === '2.0' && (request.method === 'tools/list' || request.method === 'listTools')) {
           res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ jsonrpc: '2.0', id: request.id, result: mcpTools }));
+          res.end(JSON.stringify({ jsonrpc: '2.0', id: request.id, result: { tools: mcpTools } }));
           return;
         }
         // JSON-RPC 2.0 support
