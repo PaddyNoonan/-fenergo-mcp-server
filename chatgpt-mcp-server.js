@@ -115,6 +115,7 @@ const server = http.createServer(async (req, res) => {
         const requests = Array.isArray(parsed) ? parsed : [parsed];
         const responses = await Promise.all(requests.map(async (request) => {
           try {
+            // All uses of 'request' are now safely inside this callback
             // JSON-RPC tools/list support (must be after request is defined)
             if (request.jsonrpc === '2.0' && (request.method === 'tools/list' || request.method === 'listTools')) {
               // Pagination support: cursor in request, nextCursor in result (not implemented, so always null)
