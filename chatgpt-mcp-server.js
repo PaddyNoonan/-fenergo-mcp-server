@@ -25,6 +25,11 @@ console.log(`🏢 Tenant: ${FENERGO_TENANT_ID}`);
 
 // HTTP Server
 const server = http.createServer(async (req, res) => {
+    // Log all requests
+    let rawBody = '';
+    req.on('data', chunk => rawBody += chunk);
+    req.on('end', () => {}); // placeholder to ensure 'data' is consumed for logging
+    console.log(`[${new Date().toISOString()}] Incoming request: ${req.method} ${req.url}`);
     // MCP tools definition (shared)
     const mcpTools = [
       {
@@ -55,134 +60,142 @@ const server = http.createServer(async (req, res) => {
   // MCP protocol tool execution endpoint for ChatGPT
   if (req.url === '/mcp' && req.method === 'POST') {
     let body = '';
-    console.log(`[${new Date().toISOString()}] /mcp POST request received from ${req.socket.remoteAddress}`);
     req.on('data', chunk => body += chunk);
     req.on('end', async () => {
       console.log(`[${new Date().toISOString()}] /mcp POST raw body:`, body);
       try {
-        const request = JSON.parse(body);
-        // JSON-RPC tools/list support (must be after request is defined)
-        if (request.jsonrpc === '2.0' && (request.method === 'tools/list' || request.method === 'listTools')) {
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ jsonrpc: '2.0', id: request.id, result: { tools: mcpTools } }));
-          return;
-        }
-        // JSON-RPC 2.0 support
-        if (request.jsonrpc === '2.0' && request.method === 'initialize') {
-          // Respond with protocol info
-          const result = {
-            protocolVersion: '2024-01-01',
-            server: {
-              name: 'Fenergo Nebula MCP Server',
-              version: '1.0.0',
-              endpoints: {
-                health: '/health',
-                tools: '/tools',
-                execute: '/execute',
-                updateToken: '/update-token'
-              }
-            },
-            tools: mcpTools
-          };
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ jsonrpc: '2.0', id: request.id, result }));
-          return;
-        }
-        // JSON-RPC tool execution
-        if (request.jsonrpc === '2.0' && request.method === 'executeTool') {
-          const { tool, parameters } = request.params || {};
-          if (tool !== 'investigate_journey') {
-            res.writeHead(400, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ jsonrpc: '2.0', id: request.id, error: { code: -32601, message: 'Unknown tool' } }));
-            return;
-          }
-          const { journeyId, query, scope } = parameters;
-          let payload;
-          if (scope === 'documents') {
-            payload = {
-              data: {
-                message: query,
-                scope: {
-                  documentContext: {
-                    contextLevel: 'Journey',
-                    contextId: journeyId
-                  },
-                  documentRequirementContext: null
-                },
-                conversationHistory: []
-              }
-            };
-          } else {
-            payload = {
-              data: {
-                message: query,
-                scope: {
-                  documentContext: null,
-                  documentRequirementContext: {
-                    contextLevel: 'Journey',
-                    contextId: journeyId
+        const parsed = JSON.parse(body);
+        // Batch support
+        const requests = Array.isArray(parsed) ? parsed : [parsed];
+        const responses = await Promise.all(requests.map(async (request) => {
+          try {
+            // JSON-RPC tools/list support (must be after request is defined)
+            if (request.jsonrpc === '2.0' && (request.method === 'tools/list' || request.method === 'listTools')) {
+              // Pagination support: cursor in request, nextCursor in result (not implemented, so always null)
+              return { jsonrpc: '2.0', id: request.id, result: { tools: mcpTools, nextCursor: null } };
+            }
+            // JSON-RPC 2.0 support
+            if (request.jsonrpc === '2.0' && request.method === 'initialize') {
+              // Respond with protocol info
+              const result = {
+                protocolVersion: '2024-01-01',
+                server: {
+                  name: 'Fenergo Nebula MCP Server',
+                  version: '1.0.0',
+                  endpoints: {
+                    health: '/health',
+                    tools: '/tools',
+                    execute: '/execute',
+                    updateToken: '/update-token'
                   }
                 },
-                conversationHistory: []
+                tools: mcpTools,
+                capabilities: {} // must be an object
+              };
+              return { jsonrpc: '2.0', id: request.id, result };
+            }
+            // JSON-RPC tool execution (executeTool/tools/call)
+            if (request.jsonrpc === '2.0' && (request.method === 'executeTool' || request.method === 'tools/call')) {
+              const { tool, parameters } = request.params || {};
+              if (tool !== 'investigate_journey') {
+                return { jsonrpc: '2.0', id: request.id, error: { code: -32601, message: 'Unknown tool' } };
+              }
+              const { journeyId, query, scope } = parameters;
+              let payload;
+              if (scope === 'documents') {
+                payload = {
+                  data: {
+                    message: query,
+                    scope: {
+                      documentContext: {
+                        contextLevel: 'Journey',
+                        contextId: journeyId
+                      },
+                      documentRequirementContext: null
+                    },
+                    conversationHistory: []
+                  }
+                };
+              } else {
+                payload = {
+                  data: {
+                    message: query,
+                    scope: {
+                      documentContext: null,
+                      documentRequirementContext: {
+                        contextLevel: 'Journey',
+                        contextId: journeyId
+                      }
+                    },
+                    conversationHistory: []
+                  }
+                };
+              }
+              const apiResponse = await callFenergoAPI(payload);
+              // tools/call result shape: content array, isError optional
+              return {
+                jsonrpc: '2.0',
+                id: request.id,
+                result: {
+                  content: [apiResponse.data?.data?.response || 'No data returned'],
+                  metadata: apiResponse.data?.data?.metadata || {},
+                  isError: false
+                }
+              };
+            }
+            // Legacy MCP tool execution
+            const { tool, parameters } = request;
+            if (tool !== 'investigate_journey') {
+              return { jsonrpc: '2.0', id: request.id, error: { code: -32601, message: 'Unknown tool' } };
+            }
+            const { journeyId, query, scope } = parameters;
+            let payload;
+            if (scope === 'documents') {
+              payload = {
+                data: {
+                  message: query,
+                  scope: {
+                    documentContext: {
+                      contextLevel: 'Journey',
+                      contextId: journeyId
+                    },
+                    documentRequirementContext: null
+                  },
+                  conversationHistory: []
+                }
+              };
+            } else {
+              payload = {
+                data: {
+                  message: query,
+                  scope: {
+                    documentContext: null,
+                    documentRequirementContext: {
+                      contextLevel: 'Journey',
+                      contextId: journeyId
+                    }
+                  },
+                  conversationHistory: []
+                }
+              };
+            }
+            const apiResponse = await callFenergoAPI(payload);
+            return {
+              jsonrpc: '2.0',
+              id: request.id,
+              result: {
+                content: [apiResponse.data?.data?.response || 'No data returned'],
+                metadata: apiResponse.data?.data?.metadata || {},
+                isError: false
               }
             };
+          } catch (error) {
+            console.error('MCP POST /mcp error:', error);
+            return { jsonrpc: '2.0', id: request.id, error: { code: -32000, message: error.message } };
           }
-          const apiResponse = await callFenergoAPI(payload);
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({
-            jsonrpc: '2.0',
-            id: request.id,
-            result: {
-              result: apiResponse.data?.data?.response || 'No data returned',
-              metadata: apiResponse.data?.data?.metadata || {}
-            }
-          }));
-          return;
-        }
-        // Legacy MCP tool execution
-        const { tool, parameters } = request;
-        if (tool !== 'investigate_journey') {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: 'Unknown tool' }));
-          return;
-        }
-        const { journeyId, query, scope } = parameters;
-        let payload;
-        if (scope === 'documents') {
-          payload = {
-            data: {
-              message: query,
-              scope: {
-                documentContext: {
-                  contextLevel: 'Journey',
-                  contextId: journeyId
-                },
-                documentRequirementContext: null
-              },
-              conversationHistory: []
-            }
-          };
-        } else {
-          payload = {
-            data: {
-              message: query,
-              scope: {
-                documentContext: null,
-                documentRequirementContext: {
-                  contextLevel: 'Journey',
-                  contextId: journeyId
-                }
-              },
-              conversationHistory: []
-            }
-          };
-        }
-        const apiResponse = await callFenergoAPI(payload);
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({
-          result: apiResponse.data?.data?.response || 'No data returned',
-          metadata: apiResponse.data?.data?.metadata || {}
         }));
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(Array.isArray(parsed) ? JSON.stringify(responses) : JSON.stringify(responses[0]));
       } catch (error) {
         console.error('MCP POST /mcp error:', error);
         res.writeHead(500, { 'Content-Type': 'application/json' });
