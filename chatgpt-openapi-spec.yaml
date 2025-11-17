@@ -4,7 +4,7 @@ info:
   description: API for investigating Fenergo Nebula journeys, documents, and requirements using AI-powered insights
   version: 1.0.0
 servers:
-  - url: https://api.fenxstable.com/documentmanagementquery/api/documentmanagement
+  - url: https://api.fenxstable.com/api/documentmanagement/
     description: Fenergo Stable Environment
 
 components:
