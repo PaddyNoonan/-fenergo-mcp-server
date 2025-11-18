@@ -125,12 +125,23 @@ class AppRunnerMCPConnector {
     // Handle tool calls
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const { name, arguments: args } = request.params;
+      const timestamp = new Date().toISOString();
+
+      console.error(`[${timestamp}] Tool Request Received: ${name}`);
+      console.error(`[${timestamp}] Arguments:`, JSON.stringify(args, null, 2));
 
       if (name === 'investigate_journey') {
-        return await this.handleInvestigateJourney(args);
+        console.error(`[${timestamp}] Handling investigate_journey request`);
+        const result = await this.handleInvestigateJourney(args);
+        console.error(`[${timestamp}] investigate_journey response:`, JSON.stringify(result, null, 2));
+        return result;
       } else if (name === 'apprunner_health') {
-        return await this.handleHealthCheck();
+        console.error(`[${timestamp}] Handling health check request`);
+        const result = await this.handleHealthCheck();
+        console.error(`[${timestamp}] health check response:`, JSON.stringify(result, null, 2));
+        return result;
       } else {
+        console.error(`[${timestamp}] Unknown tool requested: ${name}`);
         return {
           isError: true,
           content: [
@@ -145,11 +156,20 @@ class AppRunnerMCPConnector {
   }
 
   async handleInvestigateJourney(args) {
+    const timestamp = new Date().toISOString();
+    console.error(`[${timestamp}] === START handleInvestigateJourney ===`);
+
     try {
       const { journeyId, query, scope } = args;
 
+      console.error(`[${timestamp}] Received parameters:`);
+      console.error(`[${timestamp}]   journeyId: ${journeyId}`);
+      console.error(`[${timestamp}]   query: ${query}`);
+      console.error(`[${timestamp}]   scope: ${scope}`);
+
       // Validate inputs
       if (!journeyId || !query || !scope) {
+        console.error(`[${timestamp}] Validation failed - missing required parameters`);
         return {
           isError: true,
           content: [
@@ -161,6 +181,8 @@ class AppRunnerMCPConnector {
         };
       }
 
+      console.error(`[${timestamp}] Validation passed`);
+
       // Build payload for AppRunner /execute endpoint
       const payload = {
         tool: 'investigate_journey',
@@ -171,13 +193,23 @@ class AppRunnerMCPConnector {
         }
       };
 
+      console.error(`[${timestamp}] Built payload:`, JSON.stringify(payload, null, 2));
+      console.error(`[${timestamp}] Calling AppRunner API at ${this.config.apprunnerUrl}/execute`);
+
       // Call AppRunner service /execute endpoint
       const response = await this.callAppRunnerAPI(payload);
+
+      console.error(`[${timestamp}] AppRunner API response received:`);
+      console.error(`[${timestamp}]   Status Code: ${response.statusCode}`);
+      console.error(`[${timestamp}]   Response Data:`, JSON.stringify(response.data, null, 2));
 
       // Extract result from response
       const result = response.data && response.data.result
         ? response.data.result
         : (response.data ? JSON.stringify(response.data) : 'No response from AppRunner');
+
+      console.error(`[${timestamp}] Extracted result:`, result);
+      console.error(`[${timestamp}] === END handleInvestigateJourney (SUCCESS) ===`);
 
       return {
         content: [
@@ -189,7 +221,10 @@ class AppRunnerMCPConnector {
         isError: false
       };
     } catch (error) {
-      console.error('Error in handleInvestigateJourney:', error);
+      console.error(`[${timestamp}] ERROR in handleInvestigateJourney:`, error.message);
+      console.error(`[${timestamp}] Error stack:`, error.stack);
+      console.error(`[${timestamp}] === END handleInvestigateJourney (ERROR) ===`);
+
       return {
         isError: true,
         content: [
@@ -231,6 +266,7 @@ class AppRunnerMCPConnector {
 
   async callAppRunnerAPI(payload, retryCount = 0) {
     return new Promise((resolve, reject) => {
+      const timestamp = new Date().toISOString();
       const postData = JSON.stringify(payload);
       const url = new URL(`${this.config.apprunnerUrl}/execute`);
 
@@ -249,20 +285,34 @@ class AppRunnerMCPConnector {
         timeout: this.config.timeout
       };
 
-      console.error(`[Request ${retryCount === 0 ? 'initial' : `retry ${retryCount}`}] POST ${url.hostname}${options.path}`);
+      const requestType = retryCount === 0 ? 'INITIAL' : `RETRY_${retryCount}`;
+      console.error(`[${timestamp}] [${requestType}] === START API Request ===`);
+      console.error(`[${timestamp}] [${requestType}] Endpoint: ${url.hostname}${options.path}`);
+      console.error(`[${timestamp}] [${requestType}] Method: ${options.method}`);
+      console.error(`[${timestamp}] [${requestType}] Tenant ID: ${this.config.tenantId}`);
+      console.error(`[${timestamp}] [${requestType}] Timeout: ${this.config.timeout}ms`);
+      console.error(`[${timestamp}] [${requestType}] Payload:`, postData);
 
       const req = https.request(options, (res) => {
         let data = '';
+        const startTime = Date.now();
+
+        console.error(`[${timestamp}] [${requestType}] Response received - Status: ${res.statusCode}`);
+        console.error(`[${timestamp}] [${requestType}] Response Headers:`, JSON.stringify(res.headers, null, 2));
+
         res.on('data', chunk => {
           data += chunk;
+          console.error(`[${timestamp}] [${requestType}] Data chunk received (${chunk.length} bytes)`);
         });
 
         res.on('end', () => {
-          console.error(`[Response] Status ${res.statusCode}`);
+          const duration = Date.now() - startTime;
+          console.error(`[${timestamp}] [${requestType}] All data received (Total: ${data.length} bytes, Duration: ${duration}ms)`);
+          console.error(`[${timestamp}] [${requestType}] Response Body:`, data);
 
           // Retry on 5xx errors
           if (res.statusCode >= 500 && retryCount < this.config.retries) {
-            console.error(`[Retry] Server error (${res.statusCode}), retrying... (${retryCount + 1}/${this.config.retries})`);
+            console.error(`[${timestamp}] [${requestType}] Server error (${res.statusCode}), retrying... (${retryCount + 1}/${this.config.retries})`);
             setTimeout(() => {
               this.callAppRunnerAPI(payload, retryCount + 1).then(resolve).catch(reject);
             }, 1000 * (retryCount + 1));
@@ -270,11 +320,16 @@ class AppRunnerMCPConnector {
           }
 
           try {
+            const parsedData = JSON.parse(data);
+            console.error(`[${timestamp}] [${requestType}] Parsed JSON response:`, JSON.stringify(parsedData, null, 2));
+            console.error(`[${timestamp}] [${requestType}] === END API Request (SUCCESS) ===`);
             resolve({
               statusCode: res.statusCode,
-              data: JSON.parse(data)
+              data: parsedData
             });
           } catch (e) {
+            console.error(`[${timestamp}] [${requestType}] Failed to parse JSON: ${e.message}`);
+            console.error(`[${timestamp}] [${requestType}] === END API Request (PARSE_ERROR) ===`);
             resolve({
               statusCode: res.statusCode,
               data: { raw: data }
@@ -284,36 +339,42 @@ class AppRunnerMCPConnector {
       });
 
       req.on('error', (err) => {
-        console.error(`[Error] ${err.message}`);
+        console.error(`[${timestamp}] [${requestType}] ERROR - Network Error: ${err.message}`);
+        console.error(`[${timestamp}] [${requestType}] Error Code: ${err.code}`);
+        console.error(`[${timestamp}] [${requestType}] Error Stack:`, err.stack);
 
         // Retry on network errors
         if (retryCount < this.config.retries) {
-          console.error(`[Retry] Network error, retrying... (${retryCount + 1}/${this.config.retries})`);
+          console.error(`[${timestamp}] [${requestType}] Retrying... (${retryCount + 1}/${this.config.retries})`);
           setTimeout(() => {
             this.callAppRunnerAPI(payload, retryCount + 1).then(resolve).catch(reject);
           }, 1000 * (retryCount + 1));
           return;
         }
 
+        console.error(`[${timestamp}] [${requestType}] === END API Request (ERROR - Max retries exceeded) ===`);
         reject(err);
       });
 
       req.on('timeout', () => {
-        console.error('[Timeout] Request timed out');
+        console.error(`[${timestamp}] [${requestType}] ERROR - Request Timeout (${this.config.timeout}ms)`);
         req.destroy();
 
         if (retryCount < this.config.retries) {
-          console.error(`[Retry] Timeout, retrying... (${retryCount + 1}/${this.config.retries})`);
+          console.error(`[${timestamp}] [${requestType}] Retrying... (${retryCount + 1}/${this.config.retries})`);
           setTimeout(() => {
             this.callAppRunnerAPI(payload, retryCount + 1).then(resolve).catch(reject);
           }, 1000 * (retryCount + 1));
           return;
         }
 
+        console.error(`[${timestamp}] [${requestType}] === END API Request (ERROR - Timeout) ===`);
         reject(new Error('Request timeout'));
       });
 
+      console.error(`[${timestamp}] [${requestType}] Writing payload to request...`);
       req.write(postData);
+      console.error(`[${timestamp}] [${requestType}] Calling req.end()...`);
       req.end();
     });
   }
