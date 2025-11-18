@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "fenergo-connector": {
+      "command": "node",
+      "args": [
+        "vscode-fenergo-mcp.js"
+      ],
+      "env": {
+        "FENERGO_API_TOKEN": "Bearer eyJhbGciOiJSUzI1NiIsImtpZCI6IjMwRDlEQTJCQ0Y5RDc2NzczMEFDMTg4N0EzRTVGNkE2QjZCMDBCNjciLCJ4NXQiOiJNTm5hSzgtZGRuY3dyQmlIby1YMnByYXdDMmMiLCJ0eXAiOiJhdCtqd3QifQ.eyJpc3MiOiJodHRwczovL2lkZW50aXR5LmZlbmVyZ29uZWJ1bGEuY29tIiwibmJmIjoxNzYyNTI2MzkzLCJpYXQiOjE3NjI1MjYzOTMsImV4cCI6MTc2MjUyNzI5MywiYXVkIjoiRmVuZXJnby5OZWJ1bGEuQXV0aG9yaXplciIsInNjb3BlIjpbIm9wZW5pZCIsInByb2ZpbGUiLCJ0ZW5hbnQiLCJmZW54LmFsbCIsInJvbGVzIl0sImFtciI6WyJwd2QiXSwiY2xpZW50X2lkIjoiZmVuZXJnby1uZWJ1bGEtYWRtaW4tdG9vbCIsInN1YiI6IjdiN2Q0NTExLTJiNDAtNDU0Mi1iZDgzLWY1YWU5NjY3NzRjMiIsImF1dGhfdGltZSI6MTc2MjUyNjM5MSwiaWRwIjoibG9jYWwiLCJ0ZW5hbnQiOiJmMmQ2ZjZhZS1iOTQ3LTRkODctOGIzNy1hZWRmNzM0N2E3NTEiLCJzaWQiOiJDQjE2RTgzNjU0N0Y0MDY0QjBCNzlCNDlCMTEzN0Y3RiJ9.ADme_MagPDcwpCQqMrNUgHu8QOzjOIzsN9bwqcXdYlv5qaiRM4FcYbuw0iNi9MeBq95WqPneOk2oEhO3ldF93JT7zZYrRtqIxXyAlTa3BWZ24itHFAwx1yk_NKbgCL8lAGlEUWfbDnO4w7o84iWY8BkMFyF_4zjXDktVf1KMBMaK48ZrjY2iiGzw-b30VirEow1aGnd0a1CnWouX4bCwYSWP8lZyxBY5MVSjRb_Hd9ADE6JHJYU5kkFcNceMxMo0mzR9ajtwqTbgLkBM8erOp9DnFELR26W2yfiKsKuDlOCDZF_t16tE7Vqf--YpIj7e7fFuht2K9ppwvpIhUvlzpA",
+        "FENERGO_API_BASE_URL": "https://api.fenergonebula.com/api/documentmanagement",
+        "NODE_ENV": "development"
+      }
+    }
+  }
+}

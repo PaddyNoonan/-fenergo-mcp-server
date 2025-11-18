@@ -1,0 +1,13 @@
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "tool": "investigate_journey",
+    "parameters": {
+      "journeyId": "5a5caba1-623f-45c5-8e02-592fb6c4dc61",
+      "query": "What documents are attached to this journey?",
+      "scope": "documents"
+    }
+  }
+}
