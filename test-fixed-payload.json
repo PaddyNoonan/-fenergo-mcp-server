@@ -1,0 +1,16 @@
+{
+  "data": {
+    "message": "Can you tell me information on Documents for this journey",
+    "scope": {
+      "documentContext": {
+        "contextLevel": "Journey",
+        "contextId": "5a5caba1-623f-45c5-8e02-592fb6c4dc61"
+      },
+      "documentRequirementContext": {
+        "contextLevel": "Journey",
+        "contextId": "5a5caba1-623f-45c5-8e02-592fb6c4dc61"
+      }
+    },
+    "conversationHistory": []
+  }
+}

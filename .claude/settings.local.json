@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s -X POST \"https://brruyqnwu2.eu-west-1.awsapprunner.com/execute\" )"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
