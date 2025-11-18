@@ -184,12 +184,21 @@ class AppRunnerMCPConnector {
       console.error(`[${timestamp}] Validation passed`);
 
       // Build payload for AppRunner /execute endpoint
+      // Fenergo API expects structured payload with data wrapper
       const payload = {
-        tool: 'investigate_journey',
-        parameters: {
-          journeyId: journeyId,
-          query: query,
-          scope: scope
+        data: {
+          message: query,
+          scope: {
+            documentContext: {
+              contextLevel: 'Journey',
+              contextId: journeyId
+            },
+            documentRequirementContext: {
+              contextLevel: 'Journey',
+              contextId: journeyId
+            }
+          },
+          conversationHistory: []
         }
       };
 
