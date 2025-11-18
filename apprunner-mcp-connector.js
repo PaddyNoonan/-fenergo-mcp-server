@@ -213,9 +213,14 @@ class AppRunnerMCPConnector {
       console.error(`[${timestamp}]   Response Data:`, JSON.stringify(response.data, null, 2));
 
       // Extract result from response
-      const result = response.data && response.data.result
+      let result = response.data && response.data.result
         ? response.data.result
         : (response.data ? JSON.stringify(response.data) : 'No response from AppRunner');
+
+      // Ensure result is a string
+      if (typeof result !== 'string') {
+        result = JSON.stringify(result);
+      }
 
       console.error(`[${timestamp}] Extracted result:`, result);
       console.error(`[${timestamp}] === END handleInvestigateJourney (SUCCESS) ===`);
