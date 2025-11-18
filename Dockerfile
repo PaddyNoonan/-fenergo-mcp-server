@@ -1,8 +1,17 @@
 FROM node:18
 WORKDIR /app
+
+# Copy package files
 COPY package*.json ./
+
+# Install dependencies
 RUN npm install
+
+# Copy application files
 COPY . .
-COPY chatgpt-openapi-spec.yaml ./
+
+# Expose port (AppRunner defaults to 8080)
 EXPOSE 8080
-CMD ["node", "chatgpt-mcp-server.js"]
+
+# Run the AppRunner backend service
+CMD ["node", "apprunner-backend.js"]

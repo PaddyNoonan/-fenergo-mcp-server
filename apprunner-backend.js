@@ -1,0 +1,254 @@
+#!/usr/bin/env node
+
+/**
+ * AppRunner Backend Service for Fenergo Insights API
+ * Runs on AWS AppRunner and provides /execute endpoint for MCP connector
+ * Handles requests with payload structure:
+ * {
+ *   "data": {
+ *     "message": "...",
+ *     "scope": { ... },
+ *     "conversationHistory": []
+ *   }
+ * }
+ */
+
+import express from 'express';
+import https from 'https';
+import { URL } from 'url';
+
+const app = express();
+const PORT = process.env.PORT || 8080;
+
+// Configuration
+const FENERGO_API_URL = 'https://api.fenxstable.com/documentmanagementquery/api/documentmanagement/insights';
+const API_TOKEN = process.env.FENERGO_API_TOKEN;
+const TENANT_ID = process.env.FENERGO_TENANT_ID;
+
+// Middleware
+app.use(express.json());
+
+// Request logging middleware
+app.use((req, res, next) => {
+  const timestamp = new Date().toISOString();
+  console.error(`[${timestamp}] ${req.method} ${req.path}`);
+  next();
+});
+
+// Health endpoint
+app.get('/health', (req, res) => {
+  const timestamp = new Date().toISOString();
+  console.error(`[${timestamp}] Health check request`);
+  res.json({
+    status: 'healthy',
+    timestamp,
+    service: 'apprunner-backend'
+  });
+});
+
+// Main execute endpoint
+app.post('/execute', async (req, res) => {
+  const timestamp = new Date().toISOString();
+  console.error(`[${timestamp}] === START /execute request ===`);
+
+  try {
+    console.error(`[${timestamp}] Request body:`, JSON.stringify(req.body, null, 2));
+
+    // Extract payload
+    const { data } = req.body;
+    if (!data) {
+      console.error(`[${timestamp}] ERROR: Missing 'data' field in payload`);
+      return res.status(400).json({
+        error: 'Invalid payload: missing "data" field',
+        received: req.body
+      });
+    }
+
+    const { message, scope, conversationHistory } = data;
+
+    // Validate required fields
+    if (!message || !scope) {
+      console.error(`[${timestamp}] ERROR: Missing required fields in data`);
+      return res.status(400).json({
+        error: 'Invalid payload: missing "message" or "scope"',
+        received: data
+      });
+    }
+
+    console.error(`[${timestamp}] Payload validated successfully`);
+    console.error(`[${timestamp}]   message: ${message}`);
+    console.error(`[${timestamp}]   scope: ${JSON.stringify(scope)}`);
+
+    // Call Fenergo insights API
+    console.error(`[${timestamp}] Calling Fenergo API: ${FENERGO_API_URL}`);
+    const fenergoResponse = await callFenergoAPI(req.body, timestamp);
+
+    console.error(`[${timestamp}] Fenergo API response received:`, JSON.stringify(fenergoResponse, null, 2));
+    console.error(`[${timestamp}] === END /execute request (SUCCESS) ===`);
+
+    // Return response to connector
+    return res.json({
+      result: fenergoResponse.result || fenergoResponse,
+      metadata: {
+        timestamp,
+        fenergoStatus: fenergoResponse.status || 'processed'
+      }
+    });
+
+  } catch (error) {
+    console.error(`[${timestamp}] ERROR in /execute:`, error.message);
+    console.error(`[${timestamp}] Error stack:`, error.stack);
+    console.error(`[${timestamp}] === END /execute request (ERROR) ===`);
+
+    return res.status(500).json({
+      error: error.message,
+      timestamp
+    });
+  }
+});
+
+/**
+ * Call Fenergo Insights API
+ */
+function callFenergoAPI(payload, timestamp) {
+  return new Promise((resolve, reject) => {
+    console.error(`[${timestamp}] [FENERGO] Building HTTPS request to ${FENERGO_API_URL}`);
+
+    const url = new URL(FENERGO_API_URL);
+    const postData = JSON.stringify(payload);
+
+    const options = {
+      hostname: url.hostname,
+      port: url.port || 443,
+      path: url.pathname + url.search,
+      method: 'POST',
+      headers: {
+        'Authorization': API_TOKEN,
+        'Content-Type': 'application/json',
+        'X-Tenant-Id': TENANT_ID,
+        'Accept': 'application/json',
+        'Content-Length': Buffer.byteLength(postData),
+        'User-Agent': 'AppRunner-Backend/1.0'
+      },
+      timeout: 30000
+    };
+
+    console.error(`[${timestamp}] [FENERGO] Request options:`, {
+      hostname: options.hostname,
+      method: options.method,
+      path: options.path,
+      hasAuth: !!API_TOKEN,
+      tenantId: TENANT_ID
+    });
+
+    const req = https.request(options, (res) => {
+      let data = '';
+
+      console.error(`[${timestamp}] [FENERGO] Response status: ${res.statusCode}`);
+      console.error(`[${timestamp}] [FENERGO] Response headers:`, JSON.stringify(res.headers, null, 2));
+
+      res.on('data', chunk => {
+        data += chunk;
+        console.error(`[${timestamp}] [FENERGO] Data chunk received (${chunk.length} bytes)`);
+      });
+
+      res.on('end', () => {
+        console.error(`[${timestamp}] [FENERGO] All data received (${data.length} bytes)`);
+        console.error(`[${timestamp}] [FENERGO] Response body:`, data);
+
+        try {
+          const parsedData = JSON.parse(data);
+          console.error(`[${timestamp}] [FENERGO] Parsed JSON response`, JSON.stringify(parsedData, null, 2));
+
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            console.error(`[${timestamp}] [FENERGO] === API call SUCCESS ===`);
+            resolve(parsedData);
+          } else {
+            console.error(`[${timestamp}] [FENERGO] === API call returned error status ===`);
+            reject(new Error(`Fenergo API error: ${res.statusCode} - ${data}`));
+          }
+        } catch (parseError) {
+          console.error(`[${timestamp}] [FENERGO] Failed to parse response as JSON: ${parseError.message}`);
+          // Return raw response if not JSON
+          console.error(`[${timestamp}] [FENERGO] Returning raw response`);
+          resolve({ result: data, raw: true });
+        }
+      });
+    });
+
+    req.on('error', (err) => {
+      console.error(`[${timestamp}] [FENERGO] === Request ERROR ===`);
+      console.error(`[${timestamp}] [FENERGO] Error: ${err.message}`);
+      console.error(`[${timestamp}] [FENERGO] Code: ${err.code}`);
+      console.error(`[${timestamp}] [FENERGO] Stack:`, err.stack);
+      reject(err);
+    });
+
+    req.on('timeout', () => {
+      console.error(`[${timestamp}] [FENERGO] === Request TIMEOUT ===`);
+      req.destroy();
+      reject(new Error('Fenergo API request timeout'));
+    });
+
+    console.error(`[${timestamp}] [FENERGO] Writing payload to request...`);
+    req.write(postData);
+    console.error(`[${timestamp}] [FENERGO] Ending request...`);
+    req.end();
+  });
+}
+
+// Error handling
+app.use((err, req, res, next) => {
+  const timestamp = new Date().toISOString();
+  console.error(`[${timestamp}] Unhandled error:`, err);
+  res.status(500).json({
+    error: 'Internal server error',
+    message: err.message,
+    timestamp
+  });
+});
+
+// Start server
+const server = app.listen(PORT, () => {
+  const timestamp = new Date().toISOString();
+  console.error(`[${timestamp}] === AppRunner Backend Started ===`);
+  console.error(`[${timestamp}] Listening on port ${PORT}`);
+  console.error(`[${timestamp}] Health endpoint: GET http://localhost:${PORT}/health`);
+  console.error(`[${timestamp}] Execute endpoint: POST http://localhost:${PORT}/execute`);
+  console.error(`[${timestamp}] Fenergo API target: ${FENERGO_API_URL}`);
+  console.error(`[${timestamp}] Configuration:`);
+  console.error(`[${timestamp}]   FENERGO_API_TOKEN: ${API_TOKEN ? 'SET' : 'MISSING'}`);
+  console.error(`[${timestamp}]   FENERGO_TENANT_ID: ${TENANT_ID || 'MISSING'}`);
+});
+
+// Graceful shutdown
+process.on('SIGTERM', () => {
+  const timestamp = new Date().toISOString();
+  console.error(`[${timestamp}] SIGTERM received, shutting down gracefully...`);
+  server.close(() => {
+    console.error(`[${timestamp}] Server closed`);
+    process.exit(0);
+  });
+});
+
+process.on('SIGINT', () => {
+  const timestamp = new Date().toISOString();
+  console.error(`[${timestamp}] SIGINT received, shutting down gracefully...`);
+  server.close(() => {
+    console.error(`[${timestamp}] Server closed`);
+    process.exit(0);
+  });
+});
+
+// Catch uncaught exceptions
+process.on('uncaughtException', (err) => {
+  const timestamp = new Date().toISOString();
+  console.error(`[${timestamp}] Uncaught exception:`, err);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  const timestamp = new Date().toISOString();
+  console.error(`[${timestamp}] Unhandled rejection:`, reason);
+  process.exit(1);
+});
