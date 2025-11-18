@@ -181,52 +181,30 @@ class FenergoClaudeConnector {
 
     const journeyId = journeyIdMatch[0];
 
-    // Build payload based on scope selection
-    let payload;
-    if (scope === 'documents') {
-      payload = {
-        data: {
-          message: query.trim(),
-          scope: {
-            documentContext: {
-              contextLevel: 'Journey',
-              contextId: journeyId
-            },
-            documentRequirementContext: null
-          },
-          conversationHistory: []
+    // Build JSON-RPC 2.0 payload for /execute
+    const payload = {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: {
+        tool: "investigate_journey",
+        parameters: {
+          journeyId,
+          query: query.trim(),
+          scope
         }
-      };
-    } else if (scope === 'requirements') {
-      payload = {
-        data: {
-          message: query.trim(),
-          scope: {
-            documentContext: null,
-            documentRequirementContext: {
-              contextLevel: 'Journey',
-              contextId: journeyId
-            }
-          },
-          conversationHistory: []
-        }
-      };
-    } else {
-      throw new Error('Invalid scope. Must be either "documents" or "requirements".');
-    }
+      }
+    };
 
     const apiUrl = `${this.config.apiBaseUrl}/insights`;
     const response = await this.makeSecureApiRequest(apiUrl, 'POST', payload);
 
-    if (response.statusCode === 200 && response.data?.data) {
-      const result = this.formatInvestigationResponse(response.data, journeyId, query, scope);
-      
-      await this.logSuccess(`Journey investigation completed for ${journeyId} with scope: ${scope} and query: "${query.substring(0, 50)}..."`);
-      
+    if (response.statusCode === 200 && response.data?.result) {
+      // Optionally format the result if needed
       return {
         content: [{
           type: 'text',
-          text: result
+          text: JSON.stringify(response.data.result, null, 2)
         }]
       };
     } else if (response.statusCode === 401) {
