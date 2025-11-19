@@ -75,23 +75,32 @@ class FenergoOAuthAuth {
       const url = new URL(this.tokenEndpoint);
       const postBody = postData.toString();
 
+      const headers = {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Length': Buffer.byteLength(postBody),
+        'Accept': 'application/json',
+        'User-Agent': 'Fenergo-OAuth-Client/1.0'
+      };
+
+      // Include tenant ID as header if available
+      if (tenantId) {
+        headers['X-Tenant-Id'] = tenantId;
+      }
+
       const options = {
         hostname: url.hostname,
         port: url.port || 443,
         path: url.pathname + url.search,
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Content-Length': Buffer.byteLength(postBody),
-          'Accept': 'application/json',
-          'User-Agent': 'Fenergo-OAuth-Client/1.0'
-        },
+        headers: headers,
         timeout: 30000
       };
 
       console.error(`[${timestamp}] [OAuth] Token request to ${this.tokenEndpoint}`);
       console.error(`[${timestamp}] [OAuth] Username: ${username}`);
       console.error(`[${timestamp}] [OAuth] Tenant: ${tenantId}`);
+      console.error(`[${timestamp}] [OAuth] Request headers:`, JSON.stringify(headers, null, 2));
+      console.error(`[${timestamp}] [OAuth] Request body (first 200 chars):`, postBody.substring(0, 200));
 
       const req = https.request(options, (res) => {
         let data = '';
@@ -104,10 +113,17 @@ class FenergoOAuthAuth {
 
         res.on('end', () => {
           console.error(`[${timestamp}] [OAuth] Response received (${data.length} bytes)`);
+          console.error(`[${timestamp}] [OAuth] Response headers:`, JSON.stringify(res.headers, null, 2));
 
           if (res.statusCode < 200 || res.statusCode >= 300) {
-            console.error(`[${timestamp}] [OAuth] Error response:`, data);
-            reject(new Error(`OAuth authentication failed: ${res.statusCode} - ${data}`));
+            console.error(`[${timestamp}] [OAuth] Error response body:`, data);
+            try {
+              const errorData = JSON.parse(data);
+              console.error(`[${timestamp}] [OAuth] Parsed error:`, JSON.stringify(errorData, null, 2));
+              reject(new Error(`OAuth authentication failed: ${res.statusCode} - ${errorData.error || data}`));
+            } catch (e) {
+              reject(new Error(`OAuth authentication failed: ${res.statusCode} - ${data}`));
+            }
             return;
           }
 
