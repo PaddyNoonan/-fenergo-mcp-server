@@ -62,7 +62,8 @@ class FenergoOAuthAuth {
       postData.append('grant_type', 'password');
       postData.append('username', username);
       postData.append('password', password);
-      postData.append('scope', this.scopes);
+      // Try without scopes first - Fenergo may not require or accept them
+      // postData.append('scope', this.scopes);
 
       // Add client credentials if available
       if (this.clientId) {
@@ -100,7 +101,8 @@ class FenergoOAuthAuth {
       console.error(`[${timestamp}] [OAuth] Username: ${username}`);
       console.error(`[${timestamp}] [OAuth] Tenant: ${tenantId}`);
       console.error(`[${timestamp}] [OAuth] Request headers:`, JSON.stringify(headers, null, 2));
-      console.error(`[${timestamp}] [OAuth] Request body (first 200 chars):`, postBody.substring(0, 200));
+      console.error(`[${timestamp}] [OAuth] Request body (FULL):`, postBody);
+      console.error(`[${timestamp}] [OAuth] Body length:`, Buffer.byteLength(postBody));
 
       const req = https.request(options, (res) => {
         let data = '';
