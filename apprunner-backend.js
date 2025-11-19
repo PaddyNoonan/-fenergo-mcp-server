@@ -16,6 +16,7 @@
 import express from 'express';
 import https from 'https';
 import { URL } from 'url';
+import FenergoOAuthAuth from './oauth-auth.js';
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -24,6 +25,12 @@ const PORT = process.env.PORT || 8080;
 const FENERGO_API_URL = 'https://api.fenxstable.com/documentmanagementquery/api/documentmanagement/insights';
 const API_TOKEN = process.env.FENERGO_API_TOKEN;
 const TENANT_ID = process.env.FENERGO_TENANT_ID;
+
+// OAuth Configuration
+const FENERGO_OAUTH_ENDPOINT = process.env.FENERGO_OAUTH_ENDPOINT || 'https://identity.fenxstable.com/connect/token';
+const oauthAuth = new FenergoOAuthAuth({
+  tokenEndpoint: FENERGO_OAUTH_ENDPOINT
+});
 
 // Middleware
 app.use(express.json());
@@ -44,6 +51,54 @@ app.get('/health', (req, res) => {
     timestamp,
     service: 'apprunner-backend'
   });
+});
+
+// OAuth Authentication endpoint
+app.post('/authenticate', async (req, res) => {
+  const timestamp = new Date().toISOString();
+  console.error(`[${timestamp}] === START /authenticate request ===`);
+
+  try {
+    const { username, password, tenantId } = req.body;
+
+    // Validate input
+    if (!username || !password || !tenantId) {
+      console.error(`[${timestamp}] ERROR: Missing required fields`);
+      return res.status(400).json({
+        error: 'Missing required fields: username, password, tenantId',
+        timestamp
+      });
+    }
+
+    console.error(`[${timestamp}] Authenticating user: ${username}`);
+
+    // Get OAuth token
+    const tokenResponse = await oauthAuth.authenticate(username, password, tenantId);
+
+    console.error(`[${timestamp}] Authentication successful`);
+    console.error(`[${timestamp}] === END /authenticate request (SUCCESS) ===`);
+
+    // Return token response
+    return res.json({
+      success: true,
+      accessToken: tokenResponse.accessToken,
+      tokenType: tokenResponse.tokenType,
+      expiresIn: tokenResponse.expiresIn,
+      scope: tokenResponse.scope,
+      timestamp
+    });
+
+  } catch (error) {
+    console.error(`[${timestamp}] ERROR in /authenticate:`, error.message);
+    console.error(`[${timestamp}] Error stack:`, error.stack);
+    console.error(`[${timestamp}] === END /authenticate request (ERROR) ===`);
+
+    return res.status(401).json({
+      error: 'Authentication failed',
+      message: error.message,
+      timestamp
+    });
+  }
 });
 
 // Main execute endpoint

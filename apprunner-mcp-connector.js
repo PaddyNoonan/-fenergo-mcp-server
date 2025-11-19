@@ -19,11 +19,18 @@ class AppRunnerMCPConnector {
       this.config = this.loadSecureConfiguration();
       console.error('Configuration loaded successfully');
 
+      // Session-level token cache (shared across tool calls in same session)
+      this.tokenCache = {
+        accessToken: null,
+        expiresAt: null,
+        tokenType: 'Bearer'
+      };
+
       this.server = new Server(
         {
           name: 'apprunner-mcp-connector',
           version: '1.0.0',
-          description: 'AWS AppRunner MCP Connector for Claude with automatic retry and failover'
+          description: 'AWS AppRunner MCP Connector for Claude with OAuth authentication'
         },
         {
           capabilities: {
@@ -51,30 +58,25 @@ class AppRunnerMCPConnector {
 
   loadSecureConfiguration() {
     console.error('Loading configuration...');
-    const requiredEnvVars = ['FENERGO_API_TOKEN'];
-    const missing = requiredEnvVars.filter(env => {
-      const exists = !!process.env[env];
-      console.error(`Environment variable ${env}: ${exists ? 'SET' : 'MISSING'}`);
-      return !exists;
-    });
+    const requiredEnvVars = [];
+    const optionalEnvVars = ['FENERGO_API_TOKEN'];
 
-    if (missing.length > 0) {
-      console.error(`Missing environment variables: ${missing.join(', ')}`);
-      throw new Error(`Security Error: Missing required environment variables: ${missing.join(', ')}`);
-    }
-
-    // Validate token format
+    // Check for optional token (fallback for backward compatibility)
     const token = process.env.FENERGO_API_TOKEN;
-    console.error(`Token validation: length=${token ? token.length : 0}, starts with Bearer: ${token ? token.startsWith('Bearer ') : false}`);
-
-    if (!token.startsWith('Bearer ') && !token.includes('.')) {
-      console.error('Invalid token format detected');
-      throw new Error('Security Error: Invalid token format. Expected Bearer token or JWT.');
+    if (token) {
+      console.error('FENERGO_API_TOKEN: SET (fallback)');
+      console.error(`Token validation: length=${token.length}, starts with Bearer: ${token.startsWith('Bearer ')}`);
+      if (!token.startsWith('Bearer ') && !token.includes('.')) {
+        console.error('Invalid token format detected');
+        throw new Error('Security Error: Invalid token format. Expected Bearer token or JWT.');
+      }
+    } else {
+      console.error('FENERGO_API_TOKEN: NOT SET (will use OAuth authenticate_fenergo tool)');
     }
 
     return {
       apprunnerUrl: process.env.APPRUNNER_URL || 'https://brruyqnwu2.eu-west-1.awsapprunner.com',
-      apiToken: token.startsWith('Bearer ') ? token : `Bearer ${token}`,
+      apiToken: token ? (token.startsWith('Bearer ') ? token : `Bearer ${token}`) : null,
       tenantId: process.env.FENERGO_TENANT_ID || 'f488cdba-2122-448d-952c-7a2a47f78f1b',
       timeout: parseInt(process.env.REQUEST_TIMEOUT || '30000', 10),
       retries: parseInt(process.env.MAX_RETRIES || '2', 10)
@@ -87,8 +89,30 @@ class AppRunnerMCPConnector {
       return {
         tools: [
           {
+            name: 'authenticate_fenergo',
+            description: 'Authenticate with Fenergo Nebula API using username and password. Must be called first before using investigate_journey. Caches token for the session.',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                username: {
+                  type: 'string',
+                  description: 'Fenergo user email/username'
+                },
+                password: {
+                  type: 'string',
+                  description: 'Fenergo user password'
+                },
+                tenantId: {
+                  type: 'string',
+                  description: 'Fenergo Tenant ID (GUID format)'
+                }
+              },
+              required: ['username', 'password', 'tenantId']
+            }
+          },
+          {
             name: 'investigate_journey',
-            description: 'Investigate a Fenergo journey from AppRunner for documents or requirements insights',
+            description: 'Investigate a Fenergo journey from AppRunner for documents or requirements insights. Requires prior authentication using authenticate_fenergo tool.',
             inputSchema: {
               type: 'object',
               properties: {
@@ -130,7 +154,12 @@ class AppRunnerMCPConnector {
       console.error(`[${timestamp}] Tool Request Received: ${name}`);
       console.error(`[${timestamp}] Arguments:`, JSON.stringify(args, null, 2));
 
-      if (name === 'investigate_journey') {
+      if (name === 'authenticate_fenergo') {
+        console.error(`[${timestamp}] Handling authenticate_fenergo request`);
+        const result = await this.handleAuthenticateFenergo(args);
+        console.error(`[${timestamp}] authenticate_fenergo response:`, JSON.stringify(result, null, 2));
+        return result;
+      } else if (name === 'investigate_journey') {
         console.error(`[${timestamp}] Handling investigate_journey request`);
         const result = await this.handleInvestigateJourney(args);
         console.error(`[${timestamp}] investigate_journey response:`, JSON.stringify(result, null, 2));
@@ -153,6 +182,98 @@ class AppRunnerMCPConnector {
         };
       }
     });
+  }
+
+  async handleAuthenticateFenergo(args) {
+    const timestamp = new Date().toISOString();
+    console.error(`[${timestamp}] === START handleAuthenticateFenergo ===`);
+
+    try {
+      const { username, password, tenantId } = args;
+
+      console.error(`[${timestamp}] Received authentication parameters:`);
+      console.error(`[${timestamp}]   username: ${username}`);
+      console.error(`[${timestamp}]   tenantId: ${tenantId}`);
+
+      // Validate inputs
+      if (!username || !password || !tenantId) {
+        console.error(`[${timestamp}] Validation failed - missing required parameters`);
+        return {
+          isError: true,
+          content: [
+            {
+              type: 'text',
+              text: 'Missing required parameters: username, password, or tenantId'
+            }
+          ]
+        };
+      }
+
+      console.error(`[${timestamp}] Validation passed`);
+      console.error(`[${timestamp}] Calling AppRunner /authenticate endpoint`);
+
+      // Call AppRunner /authenticate endpoint
+      const response = await this.callAppRunnerAuthenticate(username, password, tenantId);
+
+      console.error(`[${timestamp}] Authentication response received:`);
+      console.error(`[${timestamp}]   Status Code: ${response.statusCode}`);
+      console.error(`[${timestamp}]   Response Data:`, JSON.stringify(response.data, null, 2));
+
+      // Check for success
+      if (response.statusCode !== 200 || !response.data.success) {
+        const errorMsg = response.data.message || response.data.error || 'Authentication failed';
+        console.error(`[${timestamp}] Authentication failed: ${errorMsg}`);
+        console.error(`[${timestamp}] === END handleAuthenticateFenergo (AUTH_FAILED) ===`);
+        return {
+          isError: true,
+          content: [
+            {
+              type: 'text',
+              text: `Authentication failed: ${errorMsg}`
+            }
+          ]
+        };
+      }
+
+      // Cache token in session
+      const tokenResponse = response.data;
+      this.tokenCache.accessToken = tokenResponse.accessToken;
+      this.tokenCache.tokenType = tokenResponse.tokenType || 'Bearer';
+
+      // Calculate token expiration time
+      if (tokenResponse.expiresIn) {
+        this.tokenCache.expiresAt = new Date(Date.now() + tokenResponse.expiresIn * 1000);
+      }
+
+      console.error(`[${timestamp}] Token cached successfully`);
+      console.error(`[${timestamp}]   Token Type: ${this.tokenCache.tokenType}`);
+      console.error(`[${timestamp}]   Expires At: ${this.tokenCache.expiresAt}`);
+      console.error(`[${timestamp}] === END handleAuthenticateFenergo (SUCCESS) ===`);
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Successfully authenticated as ${username}. Token cached for session. You can now use the investigate_journey tool.`
+          }
+        ],
+        isError: false
+      };
+    } catch (error) {
+      console.error(`[${timestamp}] ERROR in handleAuthenticateFenergo:`, error.message);
+      console.error(`[${timestamp}] Error stack:`, error.stack);
+      console.error(`[${timestamp}] === END handleAuthenticateFenergo (ERROR) ===`);
+
+      return {
+        isError: true,
+        content: [
+          {
+            type: 'text',
+            text: `Authentication error: ${error.message}`
+          }
+        ]
+      };
+    }
   }
 
   async handleInvestigateJourney(args) {
@@ -183,6 +304,27 @@ class AppRunnerMCPConnector {
 
       console.error(`[${timestamp}] Validation passed`);
 
+      // Check for cached token or fallback to config token
+      let authToken = null;
+      if (this.tokenCache.accessToken) {
+        console.error(`[${timestamp}] Using cached OAuth token`);
+        authToken = `${this.tokenCache.tokenType} ${this.tokenCache.accessToken}`;
+      } else if (this.config.apiToken) {
+        console.error(`[${timestamp}] Using fallback Bearer token from config`);
+        authToken = this.config.apiToken;
+      } else {
+        console.error(`[${timestamp}] ERROR: No authentication token available`);
+        return {
+          isError: true,
+          content: [
+            {
+              type: 'text',
+              text: 'No authentication token available. Please call authenticate_fenergo tool first with your Fenergo credentials.'
+            }
+          ]
+        };
+      }
+
       // Build payload for AppRunner /execute endpoint
       // Fenergo API expects structured payload with data wrapper
       const payload = {
@@ -206,7 +348,7 @@ class AppRunnerMCPConnector {
       console.error(`[${timestamp}] Calling AppRunner API at ${this.config.apprunnerUrl}/execute`);
 
       // Call AppRunner service /execute endpoint
-      const response = await this.callAppRunnerAPI(payload);
+      const response = await this.callAppRunnerAPI(payload, authToken);
 
       console.error(`[${timestamp}] AppRunner API response received:`);
       console.error(`[${timestamp}]   Status Code: ${response.statusCode}`);
@@ -278,11 +420,14 @@ class AppRunnerMCPConnector {
     }
   }
 
-  async callAppRunnerAPI(payload, retryCount = 0) {
+  async callAppRunnerAPI(payload, authToken = null, retryCount = 0) {
     return new Promise((resolve, reject) => {
       const timestamp = new Date().toISOString();
       const postData = JSON.stringify(payload);
       const url = new URL(`${this.config.apprunnerUrl}/execute`);
+
+      // Use provided authToken or fall back to config token
+      const token = authToken || this.config.apiToken;
 
       const options = {
         hostname: url.hostname,
@@ -290,7 +435,7 @@ class AppRunnerMCPConnector {
         path: url.pathname,
         method: 'POST',
         headers: {
-          'Authorization': this.config.apiToken,
+          'Authorization': token,
           'Content-Type': 'application/json',
           'X-Tenant-Id': this.config.tenantId,
           'Accept': 'application/json',
@@ -328,7 +473,7 @@ class AppRunnerMCPConnector {
           if (res.statusCode >= 500 && retryCount < this.config.retries) {
             console.error(`[${timestamp}] [${requestType}] Server error (${res.statusCode}), retrying... (${retryCount + 1}/${this.config.retries})`);
             setTimeout(() => {
-              this.callAppRunnerAPI(payload, retryCount + 1).then(resolve).catch(reject);
+              this.callAppRunnerAPI(payload, authToken, retryCount + 1).then(resolve).catch(reject);
             }, 1000 * (retryCount + 1));
             return;
           }
@@ -361,7 +506,7 @@ class AppRunnerMCPConnector {
         if (retryCount < this.config.retries) {
           console.error(`[${timestamp}] [${requestType}] Retrying... (${retryCount + 1}/${this.config.retries})`);
           setTimeout(() => {
-            this.callAppRunnerAPI(payload, retryCount + 1).then(resolve).catch(reject);
+            this.callAppRunnerAPI(payload, authToken, retryCount + 1).then(resolve).catch(reject);
           }, 1000 * (retryCount + 1));
           return;
         }
@@ -377,7 +522,7 @@ class AppRunnerMCPConnector {
         if (retryCount < this.config.retries) {
           console.error(`[${timestamp}] [${requestType}] Retrying... (${retryCount + 1}/${this.config.retries})`);
           setTimeout(() => {
-            this.callAppRunnerAPI(payload, retryCount + 1).then(resolve).catch(reject);
+            this.callAppRunnerAPI(payload, authToken, retryCount + 1).then(resolve).catch(reject);
           }, 1000 * (retryCount + 1));
           return;
         }
@@ -389,6 +534,84 @@ class AppRunnerMCPConnector {
       console.error(`[${timestamp}] [${requestType}] Writing payload to request...`);
       req.write(postData);
       console.error(`[${timestamp}] [${requestType}] Calling req.end()...`);
+      req.end();
+    });
+  }
+
+  async callAppRunnerAuthenticate(username, password, tenantId) {
+    return new Promise((resolve, reject) => {
+      const timestamp = new Date().toISOString();
+      const postData = JSON.stringify({ username, password, tenantId });
+      const url = new URL(`${this.config.apprunnerUrl}/authenticate`);
+
+      const options = {
+        hostname: url.hostname,
+        port: url.port || 443,
+        path: url.pathname,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Content-Length': Buffer.byteLength(postData)
+        },
+        timeout: this.config.timeout
+      };
+
+      console.error(`[${timestamp}] [AUTH] === START Authentication Request ===`);
+      console.error(`[${timestamp}] [AUTH] Endpoint: ${url.hostname}${options.path}`);
+      console.error(`[${timestamp}] [AUTH] Username: ${username}`);
+      console.error(`[${timestamp}] [AUTH] Tenant ID: ${tenantId}`);
+
+      const req = https.request(options, (res) => {
+        let data = '';
+
+        console.error(`[${timestamp}] [AUTH] Response status: ${res.statusCode}`);
+
+        res.on('data', chunk => {
+          data += chunk;
+          console.error(`[${timestamp}] [AUTH] Data chunk received (${chunk.length} bytes)`);
+        });
+
+        res.on('end', () => {
+          console.error(`[${timestamp}] [AUTH] All data received (${data.length} bytes)`);
+          console.error(`[${timestamp}] [AUTH] Response body:`, data);
+
+          try {
+            const parsedData = JSON.parse(data);
+            console.error(`[${timestamp}] [AUTH] Parsed JSON response:`, JSON.stringify(parsedData, null, 2));
+            console.error(`[${timestamp}] [AUTH] === END Authentication Request (SUCCESS) ===`);
+            resolve({
+              statusCode: res.statusCode,
+              data: parsedData
+            });
+          } catch (e) {
+            console.error(`[${timestamp}] [AUTH] Failed to parse response as JSON: ${e.message}`);
+            console.error(`[${timestamp}] [AUTH] === END Authentication Request (PARSE_ERROR) ===`);
+            resolve({
+              statusCode: res.statusCode,
+              data: { raw: data }
+            });
+          }
+        });
+      });
+
+      req.on('error', (err) => {
+        console.error(`[${timestamp}] [AUTH] === Request ERROR ===`);
+        console.error(`[${timestamp}] [AUTH] Error: ${err.message}`);
+        console.error(`[${timestamp}] [AUTH] Code: ${err.code}`);
+        console.error(`[${timestamp}] [AUTH] Stack:`, err.stack);
+        reject(err);
+      });
+
+      req.on('timeout', () => {
+        console.error(`[${timestamp}] [AUTH] === Request TIMEOUT ===`);
+        req.destroy();
+        reject(new Error('Authentication request timeout'));
+      });
+
+      console.error(`[${timestamp}] [AUTH] Writing payload to request...`);
+      req.write(postData);
+      console.error(`[${timestamp}] [AUTH] Calling req.end()...`);
       req.end();
     });
   }
