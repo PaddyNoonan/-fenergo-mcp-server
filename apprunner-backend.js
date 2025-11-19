@@ -31,6 +31,11 @@ const FENERGO_OAUTH_ENDPOINT = process.env.FENERGO_OAUTH_ENDPOINT || 'https://id
 const FENERGO_CLIENT_ID = process.env.FENERGO_CLIENT_ID || 'quasar-sandbox';
 const FENERGO_CLIENT_SECRET = process.env.FENERGO_CLIENT_SECRET;
 
+console.error('[STARTUP] OAuth Configuration:');
+console.error(`  FENERGO_OAUTH_ENDPOINT: ${FENERGO_OAUTH_ENDPOINT}`);
+console.error(`  FENERGO_CLIENT_ID: ${FENERGO_CLIENT_ID}`);
+console.error(`  FENERGO_CLIENT_SECRET: ${FENERGO_CLIENT_SECRET ? 'SET (' + FENERGO_CLIENT_SECRET.length + ' chars)' : 'NOT SET - OAuth will fail!'}`);
+
 const oauthAuth = new FenergoOAuthAuth({
   tokenEndpoint: FENERGO_OAUTH_ENDPOINT,
   clientId: FENERGO_CLIENT_ID,
