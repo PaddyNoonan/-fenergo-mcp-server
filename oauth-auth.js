@@ -101,7 +101,12 @@ class FenergoOAuthAuth {
       console.error(`[${timestamp}] [OAuth] Username: ${username}`);
       console.error(`[${timestamp}] [OAuth] Tenant: ${tenantId}`);
       console.error(`[${timestamp}] [OAuth] Request headers:`, JSON.stringify(headers, null, 2));
-      console.error(`[${timestamp}] [OAuth] Request body (FULL):`, postBody);
+      // Log request body structure without exposing password
+      const bodyParams = postBody.split('&').map(param => {
+        const [key] = param.split('=');
+        return key;
+      });
+      console.error(`[${timestamp}] [OAuth] Request parameters:`, bodyParams);
       console.error(`[${timestamp}] [OAuth] Body length:`, Buffer.byteLength(postBody));
 
       const req = https.request(options, (res) => {
