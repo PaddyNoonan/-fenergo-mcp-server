@@ -28,8 +28,13 @@ const TENANT_ID = process.env.FENERGO_TENANT_ID;
 
 // OAuth Configuration
 const FENERGO_OAUTH_ENDPOINT = process.env.FENERGO_OAUTH_ENDPOINT || 'https://identity.fenxstable.com/connect/token';
+const FENERGO_CLIENT_ID = process.env.FENERGO_CLIENT_ID || 'quasar-sandbox';
+const FENERGO_CLIENT_SECRET = process.env.FENERGO_CLIENT_SECRET;
+
 const oauthAuth = new FenergoOAuthAuth({
-  tokenEndpoint: FENERGO_OAUTH_ENDPOINT
+  tokenEndpoint: FENERGO_OAUTH_ENDPOINT,
+  clientId: FENERGO_CLIENT_ID,
+  clientSecret: FENERGO_CLIENT_SECRET
 });
 
 // Middleware

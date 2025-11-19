@@ -12,7 +12,7 @@ import { URL } from 'url';
 class FenergoOAuthAuth {
   constructor(options = {}) {
     this.tokenEndpoint = options.tokenEndpoint || 'https://identity.fenxstable.com/connect/token';
-    this.clientId = options.clientId;
+    this.clientId = options.clientId || 'quasar-sandbox';
     this.clientSecret = options.clientSecret;
 
     // Scopes for Fenergo API access
@@ -62,10 +62,9 @@ class FenergoOAuthAuth {
       postData.append('grant_type', 'password');
       postData.append('username', username);
       postData.append('password', password);
-      // Try without scopes first - Fenergo may not require or accept them
-      // postData.append('scope', this.scopes);
+      postData.append('scope', this.scopes);
 
-      // Add client credentials if available
+      // Add client credentials (required for password grant)
       if (this.clientId) {
         postData.append('client_id', this.clientId);
       }
