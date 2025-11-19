@@ -72,21 +72,43 @@ app.post('/authenticate', async (req, res) => {
 
     console.error(`[${timestamp}] Authenticating user: ${username}`);
 
-    // Get OAuth token
-    const tokenResponse = await oauthAuth.authenticate(username, password, tenantId);
+    // Try OAuth token exchange
+    try {
+      const tokenResponse = await oauthAuth.authenticate(username, password, tenantId);
 
-    console.error(`[${timestamp}] Authentication successful`);
-    console.error(`[${timestamp}] === END /authenticate request (SUCCESS) ===`);
+      console.error(`[${timestamp}] Authentication successful via OAuth`);
+      console.error(`[${timestamp}] === END /authenticate request (SUCCESS - OAuth) ===`);
 
-    // Return token response
-    return res.json({
-      success: true,
-      accessToken: tokenResponse.accessToken,
-      tokenType: tokenResponse.tokenType,
-      expiresIn: tokenResponse.expiresIn,
-      scope: tokenResponse.scope,
-      timestamp
-    });
+      // Return token response
+      return res.json({
+        success: true,
+        accessToken: tokenResponse.accessToken,
+        tokenType: tokenResponse.tokenType,
+        expiresIn: tokenResponse.expiresIn,
+        scope: tokenResponse.scope,
+        timestamp
+      });
+    } catch (oauthError) {
+      console.error(`[${timestamp}] OAuth authentication failed: ${oauthError.message}`);
+
+      // Fallback: If OAuth fails and we have a static token configured, return it
+      if (API_TOKEN) {
+        console.error(`[${timestamp}] Falling back to static API token`);
+        console.error(`[${timestamp}] === END /authenticate request (SUCCESS - Fallback) ===`);
+
+        return res.json({
+          success: true,
+          accessToken: API_TOKEN.replace('Bearer ', ''),
+          tokenType: 'Bearer',
+          expiresIn: 3600,
+          scope: 'fallback',
+          timestamp,
+          note: 'Using configured API token as fallback'
+        });
+      }
+
+      throw oauthError;
+    }
 
   } catch (error) {
     console.error(`[${timestamp}] ERROR in /authenticate:`, error.message);
