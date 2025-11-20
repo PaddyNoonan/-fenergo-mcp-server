@@ -5,7 +5,7 @@
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
-    "start": "node chatgpt-mcp-server.js"
+    "start": "node apprunner-backend.js"
   },
   "keywords": [
     "mcp",
