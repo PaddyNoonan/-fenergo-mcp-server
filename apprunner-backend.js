@@ -140,6 +140,21 @@ app.post('/execute', async (req, res) => {
 
   try {
     console.error(`[${timestamp}] Request body:`, JSON.stringify(req.body, null, 2));
+    console.error(`[${timestamp}] Request headers:`, JSON.stringify(req.headers, null, 2));
+
+    // Extract Authorization header from incoming request (OAuth token from MCP connector)
+    const authHeader = req.headers.authorization;
+    console.error(`[${timestamp}] Authorization header present: ${!!authHeader}`);
+    if (authHeader) {
+      console.error(`[${timestamp}] Will use OAuth token from Authorization header`);
+    } else if (API_TOKEN) {
+      console.error(`[${timestamp}] No Authorization header, will use fallback API_TOKEN from environment`);
+    } else {
+      console.error(`[${timestamp}] ERROR: No authentication available`);
+      return res.status(401).json({
+        error: 'Unauthorized: No authentication token provided'
+      });
+    }
 
     // Extract payload
     const { data } = req.body;
@@ -166,9 +181,9 @@ app.post('/execute', async (req, res) => {
     console.error(`[${timestamp}]   message: ${message}`);
     console.error(`[${timestamp}]   scope: ${JSON.stringify(scope)}`);
 
-    // Call Fenergo insights API
+    // Call Fenergo insights API with either OAuth token or fallback token
     console.error(`[${timestamp}] Calling Fenergo API: ${FENERGO_API_URL}`);
-    const fenergoResponse = await callFenergoAPI(req.body, timestamp);
+    const fenergoResponse = await callFenergoAPI(req.body, timestamp, authHeader);
 
     console.error(`[${timestamp}] Fenergo API response received:`, JSON.stringify(fenergoResponse, null, 2));
     console.error(`[${timestamp}] === END /execute request (SUCCESS) ===`);
@@ -196,13 +211,20 @@ app.post('/execute', async (req, res) => {
 
 /**
  * Call Fenergo Insights API
+ * @param {Object} payload - Request payload
+ * @param {string} timestamp - Request timestamp
+ * @param {string} authHeader - Optional OAuth Authorization header from MCP connector
  */
-function callFenergoAPI(payload, timestamp) {
+function callFenergoAPI(payload, timestamp, authHeader = null) {
   return new Promise((resolve, reject) => {
     console.error(`[${timestamp}] [FENERGO] Building HTTPS request to ${FENERGO_API_URL}`);
 
     const url = new URL(FENERGO_API_URL);
     const postData = JSON.stringify(payload);
+
+    // Use OAuth token from MCP connector if available, otherwise fall back to static API_TOKEN
+    const token = authHeader || API_TOKEN;
+    console.error(`[${timestamp}] [FENERGO] Using token source: ${authHeader ? 'OAuth from MCP connector' : 'Fallback API_TOKEN from environment'}`);
 
     const options = {
       hostname: url.hostname,
@@ -210,7 +232,7 @@ function callFenergoAPI(payload, timestamp) {
       path: url.pathname + url.search,
       method: 'POST',
       headers: {
-        'Authorization': API_TOKEN,
+        'Authorization': token,
         'Content-Type': 'application/json',
         'X-Tenant-Id': TENANT_ID,
         'Accept': 'application/json',
@@ -224,7 +246,8 @@ function callFenergoAPI(payload, timestamp) {
       hostname: options.hostname,
       method: options.method,
       path: options.path,
-      hasAuth: !!API_TOKEN,
+      tokenSource: authHeader ? 'OAuth' : 'Fallback',
+      hasAuth: !!token,
       tenantId: TENANT_ID
     });
 
