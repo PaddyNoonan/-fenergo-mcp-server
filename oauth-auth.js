@@ -13,7 +13,7 @@ class FenergoOAuthAuth {
   constructor(options = {}) {
     this.tokenEndpoint = options.tokenEndpoint || 'https://identity.fenxstable.com/connect/token';
     this.clientId = options.clientId || 'quasar-sandbox';
-    this.clientSecret = options.clientSecret;
+    this.clientSecret = options.clientSecret || 'secret';
 
     // Scopes for Fenergo API access
     // Only request fenx.all - the client is only configured for this scope
