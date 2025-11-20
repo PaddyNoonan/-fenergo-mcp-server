@@ -16,14 +16,13 @@ class FenergoOAuthAuth {
     this.clientSecret = options.clientSecret;
 
     // Scopes for Fenergo API access
+    // fenx.all grants all fenx.* permissions including documents.read and journey.read
     this.scopes = options.scopes || [
       'openid',
       'profile',
       'email',
       'tenant',
-      'fenergo.all',
-      'fenx.documents.read',
-      'fenx.journey.read'
+      'fenx.all'
     ].join(' ');
   }
 
