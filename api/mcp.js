@@ -9,6 +9,68 @@ function getToken() {
   return process.env.FENERGO_API_TOKEN;
 }
 
+// OAuth Authentication for password grant flow
+function authenticateWithOAuth(username, password, tenantId) {
+  return new Promise((resolve, reject) => {
+    const clientId = process.env.FENERGO_CLIENT_ID || 'quasar-sandbox';
+    const clientSecret = process.env.FENERGO_CLIENT_SECRET;
+    const oauthEndpoint = process.env.FENERGO_OAUTH_ENDPOINT || 'https://identity.fenxstable.com/connect/token';
+
+    // Build request body
+    const bodyParams = new URLSearchParams();
+    bodyParams.append('grant_type', 'password');
+    bodyParams.append('username', username);
+    bodyParams.append('password', password);
+    bodyParams.append('client_id', clientId);
+    if (clientSecret) {
+      bodyParams.append('client_secret', clientSecret);
+    }
+    bodyParams.append('scope', 'openid profile email tenant fenergo.all fenx.documents.read fenx.journey.read');
+
+    const postBody = bodyParams.toString();
+
+    const options = {
+      hostname: 'identity.fenxstable.com',
+      port: 443,
+      path: '/connect/token',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Length': Buffer.byteLength(postBody),
+        'Accept': 'application/json',
+        'X-Tenant-Id': tenantId
+      }
+    };
+
+    const req = https.request(options, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try {
+          const parsed = JSON.parse(data);
+          if (res.statusCode >= 200 && res.statusCode < 300 && parsed.access_token) {
+            resolve({
+              success: true,
+              accessToken: parsed.access_token,
+              tokenType: parsed.token_type || 'Bearer',
+              expiresIn: parsed.expires_in || 3600,
+              scope: parsed.scope
+            });
+          } else {
+            reject(new Error(`OAuth failed: ${res.statusCode} - ${parsed.error || data}`));
+          }
+        } catch (e) {
+          reject(new Error(`Failed to parse OAuth response: ${data}`));
+        }
+      });
+    });
+
+    req.on('error', reject);
+    req.write(postBody);
+    req.end();
+  });
+}
+
 // Call Fenergo API
 function callFenergoAPI(payload, token) {
   return new Promise((resolve, reject) => {
@@ -75,10 +137,43 @@ module.exports = async (req, res) => {
       status: 'running',
       endpoints: {
         health: '/api/mcp?action=health',
+        authenticate: '/api/mcp?action=authenticate',
         tools: '/api/mcp?action=tools',
         execute: '/api/mcp?action=execute'
       }
     });
+  }
+
+  // Authenticate endpoint (OAuth)
+  if (req.url.startsWith('/api/mcp') && req.url.includes('action=authenticate') && req.method === 'POST') {
+    try {
+      const { username, password, tenantId } = req.body || {};
+
+      if (!username || !password || !tenantId) {
+        return res.status(400).json({ error: 'Missing required fields: username, password, tenantId' });
+      }
+
+      try {
+        const authResult = await authenticateWithOAuth(username, password, tenantId);
+        return res.status(200).json(authResult);
+      } catch (oauthError) {
+        // Fallback: use static token if OAuth fails
+        const token = getToken();
+        if (token) {
+          return res.status(200).json({
+            success: true,
+            accessToken: token.replace('Bearer ', ''),
+            tokenType: 'Bearer',
+            expiresIn: 3600,
+            scope: 'fallback',
+            note: 'Using configured API token as fallback'
+          });
+        }
+        throw oauthError;
+      }
+    } catch (error) {
+      return res.status(401).json({ error: 'Authentication failed', message: error.message });
+    }
   }
 
   const { action } = req.query;
