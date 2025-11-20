@@ -100,11 +100,15 @@ app.post('/authenticate', async (req, res) => {
       });
     } catch (oauthError) {
       console.error(`[${timestamp}] OAuth authentication failed: ${oauthError.message}`);
+      console.error(`[${timestamp}] OAuth credentials may be invalid. Check:`);
+      console.error(`[${timestamp}]   - FENERGO_CLIENT_ID is registered in OAuth provider`);
+      console.error(`[${timestamp}]   - FENERGO_CLIENT_SECRET is correct`);
+      console.error(`[${timestamp}]   - Client credentials are enabled for password grant flow`);
 
       // Fallback: If OAuth fails and we have a static token configured, return it
       if (API_TOKEN) {
-        console.error(`[${timestamp}] Falling back to static API token`);
-        console.error(`[${timestamp}] === END /authenticate request (SUCCESS - Fallback) ===`);
+        console.error(`[${timestamp}] WARNING: Falling back to static API token - OAuth not working`);
+        console.error(`[${timestamp}] === END /authenticate request (SUCCESS - Fallback - OAUTH ISSUE) ===`);
 
         return res.json({
           success: true,
@@ -113,7 +117,9 @@ app.post('/authenticate', async (req, res) => {
           expiresIn: 3600,
           scope: 'fallback',
           timestamp,
-          note: 'Using configured API token as fallback'
+          warning: 'OAuth authentication failed - using fallback static token',
+          oauthError: oauthError.message,
+          note: 'Using configured API token as fallback because OAuth failed'
         });
       }
 
