@@ -135,6 +135,7 @@ module.exports = async (req, res) => {
       name: 'Fenergo Nebula MCP Server',
       version: '1.0.0',
       status: 'running',
+      buildId: '20251120-oauth-v2',
       endpoints: {
         health: '/api/mcp?action=health',
         authenticate: '/api/mcp?action=authenticate',
