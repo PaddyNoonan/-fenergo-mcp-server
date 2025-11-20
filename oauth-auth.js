@@ -27,43 +27,36 @@ class FenergoOAuthAuth {
   }
 
   /**
-   * Get access token using username and password
-   * @param {string} username - User email
-   * @param {string} password - User password
-   * @param {string} tenantId - Tenant ID
+   * Get access token using client credentials (service-to-service)
+   * @param {string} username - User email (unused, kept for compatibility)
+   * @param {string} password - User password (unused, kept for compatibility)
+   * @param {string} tenantId - Tenant ID (passed as X-Tenant-Id header)
    * @returns {Promise<object>} Token response with access_token and expires_in
    */
   async authenticate(username, password, tenantId) {
-    if (!username || !password) {
-      throw new Error('OAuth: username and password are required');
-    }
     if (!tenantId) {
       throw new Error('OAuth: tenantId is required');
     }
 
-    const token = await this.requestToken(username, password, tenantId);
+    const token = await this.requestToken(tenantId);
     return token;
   }
 
   /**
-   * Request token from OAuth endpoint
-   * @param {string} username - User email
-   * @param {string} password - User password
-   * @param {string} tenantId - Tenant ID
+   * Request token from OAuth endpoint using client_credentials grant
+   * @param {string} tenantId - Tenant ID (passed as X-Tenant-Id header)
    * @returns {Promise<object>} Token response
    */
-  requestToken(username, password, tenantId) {
+  requestToken(tenantId) {
     return new Promise((resolve, reject) => {
       const timestamp = new Date().toISOString();
 
-      // Prepare request body for password grant
+      // Prepare request body for client_credentials grant
       const postData = new URLSearchParams();
-      postData.append('grant_type', 'password');
-      postData.append('username', username);
-      postData.append('password', password);
+      postData.append('grant_type', 'client_credentials');
       postData.append('scope', this.scopes);
 
-      // Add client credentials (required for password grant)
+      // Add client credentials (required for client_credentials grant)
       if (this.clientId) {
         postData.append('client_id', this.clientId);
       }
@@ -96,7 +89,8 @@ class FenergoOAuthAuth {
       };
 
       console.error(`[${timestamp}] [OAuth] Token request to ${this.tokenEndpoint}`);
-      console.error(`[${timestamp}] [OAuth] Username: ${username}`);
+      console.error(`[${timestamp}] [OAuth] Grant Type: client_credentials`);
+      console.error(`[${timestamp}] [OAuth] Client ID: ${this.clientId}`);
       console.error(`[${timestamp}] [OAuth] Tenant: ${tenantId}`);
       console.error(`[${timestamp}] [OAuth] Request headers:`, JSON.stringify(headers, null, 2));
       // Log request body structure without exposing password
