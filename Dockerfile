@@ -13,5 +13,5 @@ COPY . .
 # Expose port (AppRunner defaults to 8080)
 EXPOSE 8080
 
-# Run the AppRunner backend service
+# Run the AppRunner backend service (with OAuth /authenticate endpoint)
 CMD ["node", "apprunner-backend.js"]
