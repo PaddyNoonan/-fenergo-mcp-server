@@ -75,9 +75,9 @@ class AppRunnerMCPConnector {
     }
 
     return {
-      apprunnerUrl: process.env.APPRUNNER_URL || 'https://brruyqnwu2.eu-west-1.awsapprunner.com',
+      apprunnerUrl: process.env.APPRUNNER_URL || 'https://tc8srxrkcp.eu-west-1.awsapprunner.com',
       apiToken: token ? (token.startsWith('Bearer ') ? token : `Bearer ${token}`) : null,
-      tenantId: process.env.FENERGO_TENANT_ID || 'f488cdba-2122-448d-952c-7a2a47f78f1b',
+      tenantId: process.env.FENERGO_TENANT_ID || null,
       timeout: parseInt(process.env.REQUEST_TIMEOUT || '30000', 10),
       retries: parseInt(process.env.MAX_RETRIES || '2', 10)
     };
@@ -245,7 +245,7 @@ class AppRunnerMCPConnector {
         content: [
           {
             type: 'text',
-            text: `Successfully authenticated as ${username}. Token cached for session. You can now use the investigate_journey tool.`
+            text: `Successfully authenticated with client credentials for tenant ${tenantId}. Token cached for session. You can now use the investigate_journey tool.`
           }
         ],
         isError: false
