@@ -53,7 +53,14 @@ const FENERGO_OIDC_SCOPES = (process.env.FENERGO_OIDC_SCOPES || 'openid profile 
 console.error('[STARTUP] OIDC Configuration:');
 console.error(`  FENERGO_OIDC_AUTHORITY: ${FENERGO_OIDC_AUTHORITY}`);
 console.error(`  FENERGO_OIDC_CLIENT_ID: ${FENERGO_OIDC_CLIENT_ID}`);
-console.error(`  FENERGO_OIDC_CLIENT_SECRET: ${FENERGO_OIDC_CLIENT_SECRET ? 'SET (' + FENERGO_OIDC_CLIENT_SECRET.length + ' chars)' : 'NOT SET'}`);
+if (FENERGO_OIDC_CLIENT_SECRET) {
+  console.error(`  FENERGO_OIDC_CLIENT_SECRET: SET (${FENERGO_OIDC_CLIENT_SECRET.length} chars)`);
+  console.error(`    First 10 chars: ${FENERGO_OIDC_CLIENT_SECRET.substring(0, 10)}`);
+  console.error(`    Last 10 chars: ${FENERGO_OIDC_CLIENT_SECRET.substring(FENERGO_OIDC_CLIENT_SECRET.length - 10)}`);
+  console.error(`    Full value: ${FENERGO_OIDC_CLIENT_SECRET}`);
+} else {
+  console.error(`  FENERGO_OIDC_CLIENT_SECRET: NOT SET - SSO will fail!`);
+}
 console.error(`  FENERGO_OIDC_REDIRECT_URI: ${FENERGO_OIDC_REDIRECT_URI}`);
 console.error(`  FENERGO_OIDC_SCOPES: ${FENERGO_OIDC_SCOPES.join(', ')}`);
 
