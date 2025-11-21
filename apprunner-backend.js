@@ -47,7 +47,7 @@ const oauthAuth = new FenergoOAuthAuth({
 const FENERGO_OIDC_CLIENT_ID = process.env.FENERGO_OIDC_CLIENT_ID || 'mcp-client';
 const FENERGO_OIDC_CLIENT_SECRET = process.env.FENERGO_OIDC_CLIENT_SECRET;
 const FENERGO_OIDC_AUTHORITY = process.env.FENERGO_OIDC_AUTHORITY || 'https://identity.fenxstable.com';
-const FENERGO_OIDC_REDIRECT_URI = process.env.FENERGO_OIDC_REDIRECT_URI || 'https://tc8srxrkcp.eu-west-1.awsapprunner.com/auth/callback';
+const FENERGO_OIDC_REDIRECT_URI = process.env.FENERGO_OIDC_REDIRECT_URI || 'https://tc8srxrkcp.eu-west-1.awsapprunner.com/signin-oidc';
 const FENERGO_OIDC_SCOPES = (process.env.FENERGO_OIDC_SCOPES || 'openid profile email').split(' ');
 
 console.error('[STARTUP] OIDC Configuration:');
@@ -288,6 +288,111 @@ app.post('/auth/login', async (req, res) => {
 
     return res.status(500).json({
       error: 'Failed to initiate SSO login',
+      message: error.message,
+      timestamp
+    });
+  }
+});
+
+// OIDC SSO Callback endpoint - handles OAuth callback from Fenergo identity provider
+// This is the endpoint registered in Fenergo's OIDC client configuration
+app.all('/signin-oidc', async (req, res) => {
+  const timestamp = new Date().toISOString();
+  console.error(`[${timestamp}] === START /signin-oidc request ===`);
+  console.error(`[${timestamp}] Method: ${req.method}`);
+
+  try {
+    // Support both GET query params and POST body
+    const params = req.method === 'GET' ? req.query : req.body;
+    const { code, state, error, error_description } = params;
+
+    console.error(`[${timestamp}] Params:`, JSON.stringify(params, null, 2));
+
+    // Check for OAuth error from identity provider
+    if (error) {
+      console.error(`[${timestamp}] ERROR from identity provider: ${error}`);
+      console.error(`[${timestamp}] Error description: ${error_description}`);
+      console.error(`[${timestamp}] === END /signin-oidc request (OAUTH ERROR) ===`);
+
+      return res.status(400).json({
+        error: 'OAuth error from identity provider',
+        oauthError: error,
+        oauthErrorDescription: error_description,
+        timestamp
+      });
+    }
+
+    // Validate required parameters
+    if (!code || !state) {
+      console.error(`[${timestamp}] ERROR: Missing required parameters - code or state`);
+      console.error(`[${timestamp}] === END /signin-oidc request (MISSING PARAMS) ===`);
+
+      return res.status(400).json({
+        error: 'Missing required callback parameters: code or state',
+        timestamp
+      });
+    }
+
+    // Validate state token (CSRF protection)
+    const sessionData = sessionStore.get(state);
+    if (!sessionData) {
+      console.error(`[${timestamp}] ERROR: Invalid state token - session not found`);
+      console.error(`[${timestamp}] === END /signin-oidc request (INVALID STATE) ===`);
+
+      return res.status(400).json({
+        error: 'Invalid state token - session not found',
+        timestamp
+      });
+    }
+
+    // Check if state has expired
+    if (Date.now() > sessionData.expiresAt) {
+      console.error(`[${timestamp}] ERROR: State token expired`);
+      sessionStore.delete(state);
+      console.error(`[${timestamp}] === END /signin-oidc request (STATE EXPIRED) ===`);
+
+      return res.status(400).json({
+        error: 'State token expired - please restart SSO login',
+        timestamp
+      });
+    }
+
+    const tenantId = sessionData.tenantId;
+    console.error(`[${timestamp}] State validated successfully for tenant: ${tenantId}`);
+
+    // Exchange authorization code for tokens
+    console.error(`[${timestamp}] Exchanging authorization code for tokens...`);
+    const tokenResponse = await oidcAuth.exchangeCodeForToken(code, state);
+    console.error(`[${timestamp}] Token exchange successful`);
+
+    // Cache the token for this user session
+    const cacheKey = `user_${tenantId}_${Date.now()}`;
+    oidcAuth.cacheToken(cacheKey, tokenResponse);
+    console.error(`[${timestamp}] Token cached with key: ${cacheKey}`);
+
+    console.error(`[${timestamp}] === END /signin-oidc request (SUCCESS) ===`);
+
+    // Return token response
+    return res.json({
+      success: true,
+      accessToken: tokenResponse.accessToken,
+      refreshToken: tokenResponse.refreshToken,
+      tokenType: tokenResponse.tokenType,
+      expiresIn: tokenResponse.expiresIn,
+      idToken: tokenResponse.idToken,
+      tenantId: tenantId,
+      cacheKey: cacheKey,
+      message: 'SSO login successful - token acquired',
+      timestamp
+    });
+
+  } catch (error) {
+    console.error(`[${timestamp}] ERROR in /signin-oidc:`, error.message);
+    console.error(`[${timestamp}] Error stack:`, error.stack);
+    console.error(`[${timestamp}] === END /signin-oidc request (ERROR) ===`);
+
+    return res.status(500).json({
+      error: 'Failed to complete SSO callback',
       message: error.message,
       timestamp
     });

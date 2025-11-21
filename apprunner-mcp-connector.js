@@ -603,7 +603,7 @@ Tenant ID: ${tenantId}`;
       console.error(`[${timestamp}] SSO session validated`);
       console.error(`[${timestamp}]   Tenant ID: ${ssoSession.tenantId}`);
 
-      // Call AppRunner /auth/callback endpoint to exchange code for token
+      // Call AppRunner /signin-oidc endpoint to exchange code for token
       const response = await this.callAppRunnerSSO_Callback(code, state);
 
       console.error(`[${timestamp}] SSO callback response received:`);
