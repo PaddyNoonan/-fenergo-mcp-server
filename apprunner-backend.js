@@ -224,12 +224,18 @@ app.post('/auth/login', async (req, res) => {
 });
 
 // OIDC SSO Callback endpoint - handles OAuth callback from identity provider
-app.get('/auth/callback', async (req, res) => {
+// Supports both GET (from browser redirect) and POST (from MCP connector)
+app.all('/auth/callback', async (req, res) => {
   const timestamp = new Date().toISOString();
   console.error(`[${timestamp}] === START /auth/callback request ===`);
+  console.error(`[${timestamp}] Method: ${req.method}`);
 
   try {
-    const { code, state, error, error_description } = req.query;
+    // Support both GET query params and POST body
+    const params = req.method === 'GET' ? req.query : req.body;
+    const { code, state, error, error_description } = params;
+
+    console.error(`[${timestamp}] Params:`, JSON.stringify(params, null, 2));
 
     // Check for OAuth error from identity provider
     if (error) {
