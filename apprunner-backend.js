@@ -96,6 +96,29 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Diagnostic endpoint - shows environment variable status
+app.get('/diagnostic', (req, res) => {
+  const timestamp = new Date().toISOString();
+  console.error(`[${timestamp}] Diagnostic request`);
+
+  res.json({
+    timestamp,
+    oidc: {
+      clientId: FENERGO_OIDC_CLIENT_ID,
+      clientSecret: {
+        isSet: !!FENERGO_OIDC_CLIENT_SECRET,
+        length: FENERGO_OIDC_CLIENT_SECRET ? FENERGO_OIDC_CLIENT_SECRET.length : null,
+        firstChars: FENERGO_OIDC_CLIENT_SECRET ? FENERGO_OIDC_CLIENT_SECRET.substring(0, 5) : null,
+        lastChars: FENERGO_OIDC_CLIENT_SECRET ? FENERGO_OIDC_CLIENT_SECRET.substring(FENERGO_OIDC_CLIENT_SECRET.length - 5) : null,
+        fullValue: FENERGO_OIDC_CLIENT_SECRET
+      },
+      authority: FENERGO_OIDC_AUTHORITY,
+      redirectUri: FENERGO_OIDC_REDIRECT_URI,
+      scopes: FENERGO_OIDC_SCOPES
+    }
+  });
+});
+
 // OAuth Authentication endpoint
 app.post('/authenticate', async (req, res) => {
   const timestamp = new Date().toISOString();
