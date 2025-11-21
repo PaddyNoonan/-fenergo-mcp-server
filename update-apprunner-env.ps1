@@ -16,6 +16,13 @@ $ClientId = "quasar-sandbox"
 $ClientSecret = "4dxIqk+/MnT6hIKecUFa1iqjLs/AhorbUQgMWjTDQqI="
 $OAuthEndpoint = "https://identity.fenxstable.com/connect/token"
 
+# OIDC SSO Configuration
+$OIDCClientId = "mcp-client"
+$OIDCClientSecret = "fde959ef-da23-c764-c6ed-d7c679dada79"
+$OIDCAuthority = "https://identity.fenxstable.com"
+$OIDCRedirectUri = "https://tc8srxrkcp.eu-west-1.awsapprunner.com/signin-oidc"
+$OIDCScopes = "openid profile email"
+
 Write-Host "======================================" -ForegroundColor Cyan
 Write-Host "AppRunner Service Update" -ForegroundColor Cyan
 Write-Host "======================================" -ForegroundColor Cyan
@@ -23,10 +30,17 @@ Write-Host ""
 Write-Host "Service ARN: $ServiceArn"
 Write-Host "Region: $Region"
 Write-Host ""
-Write-Host "Adding environment variables:" -ForegroundColor Yellow
+Write-Host "Adding OAuth environment variables:" -ForegroundColor Yellow
 Write-Host "  - FENERGO_CLIENT_ID"
 Write-Host "  - FENERGO_CLIENT_SECRET"
 Write-Host "  - FENERGO_OAUTH_ENDPOINT"
+Write-Host ""
+Write-Host "Adding OIDC SSO environment variables:" -ForegroundColor Yellow
+Write-Host "  - FENERGO_OIDC_CLIENT_ID"
+Write-Host "  - FENERGO_OIDC_CLIENT_SECRET"
+Write-Host "  - FENERGO_OIDC_AUTHORITY"
+Write-Host "  - FENERGO_OIDC_REDIRECT_URI"
+Write-Host "  - FENERGO_OIDC_SCOPES"
 Write-Host ""
 
 # Get current service configuration
@@ -56,7 +70,12 @@ try {
 $envVars = @(
     "FENERGO_CLIENT_ID=$ClientId",
     "FENERGO_CLIENT_SECRET=$ClientSecret",
-    "FENERGO_OAUTH_ENDPOINT=$OAuthEndpoint"
+    "FENERGO_OAUTH_ENDPOINT=$OAuthEndpoint",
+    "FENERGO_OIDC_CLIENT_ID=$OIDCClientId",
+    "FENERGO_OIDC_CLIENT_SECRET=$OIDCClientSecret",
+    "FENERGO_OIDC_AUTHORITY=$OIDCAuthority",
+    "FENERGO_OIDC_REDIRECT_URI=$OIDCRedirectUri",
+    "FENERGO_OIDC_SCOPES=$OIDCScopes"
 )
 
 Write-Host ""
