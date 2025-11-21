@@ -17,6 +17,7 @@ import express from 'express';
 import https from 'https';
 import { URL } from 'url';
 import FenergoOAuthAuth from './oauth-auth.js';
+import FenergoOIDCAuth from './oidc-auth.js';
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -40,6 +41,31 @@ const oauthAuth = new FenergoOAuthAuth({
   tokenEndpoint: FENERGO_OAUTH_ENDPOINT,
   clientId: FENERGO_CLIENT_ID,
   clientSecret: FENERGO_CLIENT_SECRET
+});
+
+// OIDC Configuration for SSO
+const FENERGO_OIDC_CLIENT_ID = process.env.FENERGO_OIDC_CLIENT_ID || 'mcp-client';
+const FENERGO_OIDC_CLIENT_SECRET = process.env.FENERGO_OIDC_CLIENT_SECRET;
+const FENERGO_OIDC_AUTHORITY = process.env.FENERGO_OIDC_AUTHORITY || 'https://identity.fenxstable.com';
+const FENERGO_OIDC_REDIRECT_URI = process.env.FENERGO_OIDC_REDIRECT_URI || 'https://tc8srxrkcp.eu-west-1.awsapprunner.com/auth/callback';
+const FENERGO_OIDC_SCOPES = (process.env.FENERGO_OIDC_SCOPES || 'openid profile email').split(' ');
+
+console.error('[STARTUP] OIDC Configuration:');
+console.error(`  FENERGO_OIDC_AUTHORITY: ${FENERGO_OIDC_AUTHORITY}`);
+console.error(`  FENERGO_OIDC_CLIENT_ID: ${FENERGO_OIDC_CLIENT_ID}`);
+console.error(`  FENERGO_OIDC_CLIENT_SECRET: ${FENERGO_OIDC_CLIENT_SECRET ? 'SET (' + FENERGO_OIDC_CLIENT_SECRET.length + ' chars)' : 'NOT SET'}`);
+console.error(`  FENERGO_OIDC_REDIRECT_URI: ${FENERGO_OIDC_REDIRECT_URI}`);
+console.error(`  FENERGO_OIDC_SCOPES: ${FENERGO_OIDC_SCOPES.join(', ')}`);
+
+// In-memory session store for SSO state and tokens (development only - use Redis in production)
+const sessionStore = new Map();
+
+const oidcAuth = new FenergoOIDCAuth({
+  authorityUrl: FENERGO_OIDC_AUTHORITY,
+  clientId: FENERGO_OIDC_CLIENT_ID,
+  clientSecret: FENERGO_OIDC_CLIENT_SECRET,
+  redirectUri: FENERGO_OIDC_REDIRECT_URI,
+  scopes: FENERGO_OIDC_SCOPES
 });
 
 // Middleware
@@ -134,6 +160,162 @@ app.post('/authenticate', async (req, res) => {
 
     return res.status(401).json({
       error: 'Authentication failed',
+      message: error.message,
+      timestamp
+    });
+  }
+});
+
+// OIDC SSO Login endpoint - initiates user login flow
+app.post('/auth/login', async (req, res) => {
+  const timestamp = new Date().toISOString();
+  console.error(`[${timestamp}] === START /auth/login request ===`);
+
+  try {
+    const { tenantId } = req.body;
+
+    if (!tenantId) {
+      console.error(`[${timestamp}] ERROR: Missing required field - tenantId`);
+      return res.status(400).json({
+        error: 'Missing required field: tenantId',
+        timestamp
+      });
+    }
+
+    // Generate state token for CSRF protection
+    const state = oidcAuth.generateState();
+    console.error(`[${timestamp}] Generated state token for CSRF protection`);
+
+    // Generate authorization URL
+    const authorizationUrl = oidcAuth.getAuthorizationUrl(tenantId, state);
+    console.error(`[${timestamp}] Generated authorization URL`);
+
+    // Store state in session for later validation in callback
+    sessionStore.set(state, {
+      tenantId: tenantId,
+      createdAt: Date.now(),
+      expiresAt: Date.now() + (15 * 60 * 1000) // 15 minute expiry
+    });
+    console.error(`[${timestamp}] State stored in session (expires in 15 minutes)`);
+
+    console.error(`[${timestamp}] === END /auth/login request (SUCCESS) ===`);
+
+    // Return authorization URL for browser redirect
+    return res.json({
+      success: true,
+      authorizationUrl: authorizationUrl,
+      state: state,
+      tenantId: tenantId,
+      message: 'Please visit the authorization URL to complete SSO login',
+      timestamp
+    });
+
+  } catch (error) {
+    console.error(`[${timestamp}] ERROR in /auth/login:`, error.message);
+    console.error(`[${timestamp}] Error stack:`, error.stack);
+    console.error(`[${timestamp}] === END /auth/login request (ERROR) ===`);
+
+    return res.status(500).json({
+      error: 'Failed to initiate SSO login',
+      message: error.message,
+      timestamp
+    });
+  }
+});
+
+// OIDC SSO Callback endpoint - handles OAuth callback from identity provider
+app.get('/auth/callback', async (req, res) => {
+  const timestamp = new Date().toISOString();
+  console.error(`[${timestamp}] === START /auth/callback request ===`);
+
+  try {
+    const { code, state, error, error_description } = req.query;
+
+    // Check for OAuth error from identity provider
+    if (error) {
+      console.error(`[${timestamp}] ERROR from identity provider: ${error}`);
+      console.error(`[${timestamp}] Error description: ${error_description}`);
+      console.error(`[${timestamp}] === END /auth/callback request (OAUTH ERROR) ===`);
+
+      return res.status(400).json({
+        error: 'OAuth error from identity provider',
+        oauthError: error,
+        oauthErrorDescription: error_description,
+        timestamp
+      });
+    }
+
+    // Validate required parameters
+    if (!code || !state) {
+      console.error(`[${timestamp}] ERROR: Missing required parameters - code or state`);
+      console.error(`[${timestamp}] === END /auth/callback request (MISSING PARAMS) ===`);
+
+      return res.status(400).json({
+        error: 'Missing required callback parameters: code or state',
+        timestamp
+      });
+    }
+
+    // Validate state token (CSRF protection)
+    const sessionData = sessionStore.get(state);
+    if (!sessionData) {
+      console.error(`[${timestamp}] ERROR: Invalid state token - session not found`);
+      console.error(`[${timestamp}] === END /auth/callback request (INVALID STATE) ===`);
+
+      return res.status(400).json({
+        error: 'Invalid state token - session not found',
+        timestamp
+      });
+    }
+
+    // Check if state has expired
+    if (Date.now() > sessionData.expiresAt) {
+      console.error(`[${timestamp}] ERROR: State token expired`);
+      sessionStore.delete(state);
+      console.error(`[${timestamp}] === END /auth/callback request (STATE EXPIRED) ===`);
+
+      return res.status(400).json({
+        error: 'State token expired - please restart SSO login',
+        timestamp
+      });
+    }
+
+    const tenantId = sessionData.tenantId;
+    console.error(`[${timestamp}] State validated successfully for tenant: ${tenantId}`);
+
+    // Exchange authorization code for tokens
+    console.error(`[${timestamp}] Exchanging authorization code for tokens...`);
+    const tokenResponse = await oidcAuth.exchangeCodeForToken(code, state);
+    console.error(`[${timestamp}] Token exchange successful`);
+
+    // Cache the token for this user session
+    const cacheKey = `user_${tenantId}_${Date.now()}`;
+    oidcAuth.cacheToken(cacheKey, tokenResponse);
+    console.error(`[${timestamp}] Token cached with key: ${cacheKey}`);
+
+    console.error(`[${timestamp}] === END /auth/callback request (SUCCESS) ===`);
+
+    // Return token response
+    return res.json({
+      success: true,
+      accessToken: tokenResponse.accessToken,
+      refreshToken: tokenResponse.refreshToken,
+      tokenType: tokenResponse.tokenType,
+      expiresIn: tokenResponse.expiresIn,
+      idToken: tokenResponse.idToken,
+      tenantId: tenantId,
+      cacheKey: cacheKey,
+      message: 'SSO login successful - token acquired',
+      timestamp
+    });
+
+  } catch (error) {
+    console.error(`[${timestamp}] ERROR in /auth/callback:`, error.message);
+    console.error(`[${timestamp}] Error stack:`, error.stack);
+    console.error(`[${timestamp}] === END /auth/callback request (ERROR) ===`);
+
+    return res.status(500).json({
+      error: 'Failed to complete SSO callback',
       message: error.message,
       timestamp
     });
@@ -330,8 +512,12 @@ const server = app.listen(PORT, () => {
   const timestamp = new Date().toISOString();
   console.error(`[${timestamp}] === AppRunner Backend Started ===`);
   console.error(`[${timestamp}] Listening on port ${PORT}`);
-  console.error(`[${timestamp}] Health endpoint: GET http://localhost:${PORT}/health`);
-  console.error(`[${timestamp}] Execute endpoint: POST http://localhost:${PORT}/execute`);
+  console.error(`[${timestamp}] Available endpoints:`);
+  console.error(`[${timestamp}]   GET  http://localhost:${PORT}/health`);
+  console.error(`[${timestamp}]   POST http://localhost:${PORT}/authenticate (Client Credentials OAuth)`);
+  console.error(`[${timestamp}]   POST http://localhost:${PORT}/auth/login (SSO/OIDC Login)`);
+  console.error(`[${timestamp}]   GET  http://localhost:${PORT}/auth/callback (SSO/OIDC Callback)`);
+  console.error(`[${timestamp}]   POST http://localhost:${PORT}/execute (Fenergo API Proxy)`);
   console.error(`[${timestamp}] Fenergo API target: ${FENERGO_API_URL}`);
   console.error(`[${timestamp}] Configuration:`);
   console.error(`[${timestamp}]   FENERGO_API_TOKEN: ${API_TOKEN ? 'SET' : 'MISSING'}`);
