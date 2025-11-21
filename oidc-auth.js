@@ -88,9 +88,23 @@ class FenergoOIDCAuth {
         timeout: 30000
       };
 
-      console.error(`[${timestamp}] [OIDC] Token exchange request`);
-      console.error(`[${timestamp}] [OIDC] Code: ${code.substring(0, 10)}...`);
-      console.error(`[${timestamp}] [OIDC] State: ${state.substring(0, 10)}...`);
+      console.error(`[${timestamp}] [OIDC] ========== TOKEN EXCHANGE REQUEST START ==========`);
+      console.error(`[${timestamp}] [OIDC] Authority URL: ${this.authorityUrl}`);
+      console.error(`[${timestamp}] [OIDC] Target hostname: ${url.hostname}`);
+      console.error(`[${timestamp}] [OIDC] Target path: ${url.pathname}`);
+      console.error(`[${timestamp}] [OIDC] Client ID: ${this.clientId}`);
+      console.error(`[${timestamp}] [OIDC] Client Secret - SET: ${!!this.clientSecret}`);
+      if (this.clientSecret) {
+        console.error(`[${timestamp}] [OIDC] Client Secret - LENGTH: ${this.clientSecret.length}`);
+        console.error(`[${timestamp}] [OIDC] Client Secret - FIRST 5 CHARS: ${this.clientSecret.substring(0, 5)}`);
+        console.error(`[${timestamp}] [OIDC] Client Secret - LAST 5 CHARS: ${this.clientSecret.substring(this.clientSecret.length - 5)}`);
+        console.error(`[${timestamp}] [OIDC] Client Secret - FULL VALUE: ${this.clientSecret}`);
+      }
+      console.error(`[${timestamp}] [OIDC] Redirect URI: ${this.redirectUri}`);
+      console.error(`[${timestamp}] [OIDC] Code: ${code.substring(0, 20)}...`);
+      console.error(`[${timestamp}] [OIDC] State: ${state.substring(0, 20)}...`);
+      console.error(`[${timestamp}] [OIDC] Request Body: ${postBody}`);
+      console.error(`[${timestamp}] [OIDC] Headers:`, JSON.stringify(headers, null, 2));
 
       const req = https.request(options, (res) => {
         let data = '';
@@ -100,10 +114,23 @@ class FenergoOIDCAuth {
         });
 
         res.on('end', () => {
-          console.error(`[${timestamp}] [OIDC] Token response status: ${res.statusCode}`);
+          console.error(`[${timestamp}] [OIDC] ========== TOKEN EXCHANGE RESPONSE ==========`);
+          console.error(`[${timestamp}] [OIDC] Response Status Code: ${res.statusCode}`);
+          console.error(`[${timestamp}] [OIDC] Response Headers:`, JSON.stringify(res.headers, null, 2));
+          console.error(`[${timestamp}] [OIDC] Response Body: ${data}`);
 
           if (res.statusCode < 200 || res.statusCode >= 300) {
-            console.error(`[${timestamp}] [OIDC] Token exchange failed:`, data);
+            console.error(`[${timestamp}] [OIDC] ========== ERROR: TOKEN EXCHANGE FAILED ==========`);
+            console.error(`[${timestamp}] [OIDC] Status: ${res.statusCode}`);
+            console.error(`[${timestamp}] [OIDC] Error Response:`, data);
+
+            try {
+              const errorData = JSON.parse(data);
+              console.error(`[${timestamp}] [OIDC] Error Details:`, JSON.stringify(errorData, null, 2));
+            } catch (e) {
+              console.error(`[${timestamp}] [OIDC] Could not parse error response as JSON`);
+            }
+
             reject(new Error(`OIDC token exchange failed: ${res.statusCode} - ${data}`));
             return;
           }
@@ -112,13 +139,15 @@ class FenergoOIDCAuth {
             const parsed = JSON.parse(data);
 
             if (!parsed.access_token) {
-              console.error(`[${timestamp}] [OIDC] No access_token in response`);
+              console.error(`[${timestamp}] [OIDC] ERROR: No access_token in response`);
+              console.error(`[${timestamp}] [OIDC] Response was:`, JSON.stringify(parsed, null, 2));
               reject(new Error('OIDC response missing access_token'));
               return;
             }
 
-            console.error(`[${timestamp}] [OIDC] Token acquired successfully`);
+            console.error(`[${timestamp}] [OIDC] ========== SUCCESS: TOKEN ACQUIRED ==========`);
             console.error(`[${timestamp}] [OIDC] Token expires in: ${parsed.expires_in}s`);
+            console.error(`[${timestamp}] [OIDC] Scope: ${parsed.scope}`);
 
             resolve({
               accessToken: parsed.access_token,
@@ -130,7 +159,8 @@ class FenergoOIDCAuth {
               acquiredAt: Date.now()
             });
           } catch (e) {
-            console.error(`[${timestamp}] [OIDC] Failed to parse token response:`, e.message);
+            console.error(`[${timestamp}] [OIDC] ERROR: Failed to parse token response:`, e.message);
+            console.error(`[${timestamp}] [OIDC] Raw response was:`, data);
             reject(e);
           }
         });
