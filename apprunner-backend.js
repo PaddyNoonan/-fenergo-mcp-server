@@ -110,13 +110,54 @@ app.get('/diagnostic', (req, res) => {
         length: FENERGO_OIDC_CLIENT_SECRET ? FENERGO_OIDC_CLIENT_SECRET.length : null,
         firstChars: FENERGO_OIDC_CLIENT_SECRET ? FENERGO_OIDC_CLIENT_SECRET.substring(0, 5) : null,
         lastChars: FENERGO_OIDC_CLIENT_SECRET ? FENERGO_OIDC_CLIENT_SECRET.substring(FENERGO_OIDC_CLIENT_SECRET.length - 5) : null,
-        fullValue: FENERGO_OIDC_CLIENT_SECRET
+        fullValue: FENERGO_OIDC_CLIENT_SECRET,
+        hasWhitespace: FENERGO_OIDC_CLIENT_SECRET ? /\s/.test(FENERGO_OIDC_CLIENT_SECRET) : null,
+        base64Decoded: FENERGO_OIDC_CLIENT_SECRET ? Buffer.from(FENERGO_OIDC_CLIENT_SECRET, 'base64').toString('utf-8') : null
       },
       authority: FENERGO_OIDC_AUTHORITY,
       redirectUri: FENERGO_OIDC_REDIRECT_URI,
-      scopes: FENERGO_OIDC_SCOPES
+      redirectUriEncoded: encodeURIComponent(FENERGO_OIDC_REDIRECT_URI),
+      scopes: FENERGO_OIDC_SCOPES,
+      allEnvironmentVars: {
+        FENERGO_OIDC_CLIENT_ID: process.env.FENERGO_OIDC_CLIENT_ID,
+        FENERGO_OIDC_CLIENT_SECRET: process.env.FENERGO_OIDC_CLIENT_SECRET,
+        FENERGO_OIDC_AUTHORITY: process.env.FENERGO_OIDC_AUTHORITY,
+        FENERGO_OIDC_REDIRECT_URI: process.env.FENERGO_OIDC_REDIRECT_URI,
+        FENERGO_OIDC_SCOPES: process.env.FENERGO_OIDC_SCOPES
+      }
     }
   });
+});
+
+// Test token exchange endpoint - for manual testing
+app.post('/test-token-exchange', async (req, res) => {
+  const timestamp = new Date().toISOString();
+  console.error(`[${timestamp}] === TEST TOKEN EXCHANGE START ===`);
+
+  try {
+    const { code, state } = req.body;
+
+    if (!code || !state) {
+      return res.status(400).json({
+        error: 'Missing code or state'
+      });
+    }
+
+    console.error(`[${timestamp}] Testing token exchange with code and state...`);
+    const tokenResponse = await oidcAuth.exchangeCodeForToken(code, state);
+
+    return res.json({
+      success: true,
+      message: 'Token exchange successful',
+      token: tokenResponse
+    });
+  } catch (error) {
+    console.error(`[${timestamp}] ERROR in test-token-exchange:`, error.message);
+    return res.status(500).json({
+      error: 'Token exchange failed',
+      message: error.message
+    });
+  }
 });
 
 // OAuth Authentication endpoint
