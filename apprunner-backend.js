@@ -44,10 +44,12 @@ const oauthAuth = new FenergoOAuthAuth({
 });
 
 // OIDC Configuration for SSO
+// Note: FENERGO_OIDC_REDIRECT_URI is hardcoded to match the registered callback URI in Fenergo
+// because Fenergo requires exact matching and the environment variable may have stale values
 const FENERGO_OIDC_CLIENT_ID = process.env.FENERGO_OIDC_CLIENT_ID || 'mcp-client';
 const FENERGO_OIDC_CLIENT_SECRET = process.env.FENERGO_OIDC_CLIENT_SECRET;
 const FENERGO_OIDC_AUTHORITY = process.env.FENERGO_OIDC_AUTHORITY || 'https://identity.fenxstable.com';
-const FENERGO_OIDC_REDIRECT_URI = process.env.FENERGO_OIDC_REDIRECT_URI || 'https://tc8srxrkcp.eu-west-1.awsapprunner.com/signin-oidc';
+const FENERGO_OIDC_REDIRECT_URI = 'https://tc8srxrkcp.eu-west-1.awsapprunner.com/signin-oidc';
 const FENERGO_OIDC_SCOPES = (process.env.FENERGO_OIDC_SCOPES || 'openid profile email').split(' ');
 
 console.error('[STARTUP] OIDC Configuration:');
