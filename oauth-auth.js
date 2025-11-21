@@ -22,9 +22,9 @@ class FenergoOAuthAuth {
   }
 
   /**
-   * Get access token using client credentials (service-to-service)
-   * @param {string} username - User email (unused, kept for compatibility)
-   * @param {string} password - User password (unused, kept for compatibility)
+   * Get access token using password grant (user authentication)
+   * @param {string} username - User email/username
+   * @param {string} password - User password
    * @param {string} tenantId - Tenant ID (passed as X-Tenant-Id header)
    * @returns {Promise<object>} Token response with access_token and expires_in
    */
@@ -33,25 +33,33 @@ class FenergoOAuthAuth {
       throw new Error('OAuth: tenantId is required');
     }
 
-    const token = await this.requestToken(tenantId);
+    if (!username || !password) {
+      throw new Error('OAuth: username and password are required for password grant flow');
+    }
+
+    const token = await this.requestToken(username, password, tenantId);
     return token;
   }
 
   /**
-   * Request token from OAuth endpoint using client_credentials grant
+   * Request token from OAuth endpoint using password grant (user credentials)
+   * @param {string} username - User email/username
+   * @param {string} password - User password
    * @param {string} tenantId - Tenant ID (passed as X-Tenant-Id header)
    * @returns {Promise<object>} Token response
    */
-  requestToken(tenantId) {
+  requestToken(username, password, tenantId) {
     return new Promise((resolve, reject) => {
       const timestamp = new Date().toISOString();
 
-      // Prepare request body for client_credentials grant
+      // Prepare request body for password grant (user authentication)
       const postData = new URLSearchParams();
-      postData.append('grant_type', 'client_credentials');
+      postData.append('grant_type', 'password');
       postData.append('scope', this.scopes);
+      postData.append('username', username);
+      postData.append('password', password);
 
-      // Add client credentials (required for client_credentials grant)
+      // Add client credentials (required for password grant)
       if (this.clientId) {
         postData.append('client_id', this.clientId);
       }

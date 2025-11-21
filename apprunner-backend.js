@@ -69,24 +69,23 @@ app.post('/authenticate', async (req, res) => {
   console.error(`[${timestamp}] === START /authenticate request ===`);
 
   try {
-    // For client_credentials flow, only tenantId is required
-    // username and password are optional for backwards compatibility
+    // For password grant flow, username, password, and tenantId are all required
     const { username, password, tenantId } = req.body;
 
     // Validate input
-    if (!tenantId) {
-      console.error(`[${timestamp}] ERROR: Missing required field: tenantId`);
+    if (!username || !password || !tenantId) {
+      console.error(`[${timestamp}] ERROR: Missing required fields`);
       return res.status(400).json({
-        error: 'Missing required field: tenantId',
+        error: 'Missing required fields: username, password, or tenantId',
         timestamp
       });
     }
 
-    console.error(`[${timestamp}] Authenticating with tenant: ${tenantId}`);
+    console.error(`[${timestamp}] Authenticating user: ${username}`);
 
-    // Try OAuth token exchange (client_credentials flow)
+    // Try OAuth token exchange (password grant flow)
     try {
-      const tokenResponse = await oauthAuth.authenticate(username || 'client_credentials', password || 'client_credentials', tenantId);
+      const tokenResponse = await oauthAuth.authenticate(username, password, tenantId);
 
       console.error(`[${timestamp}] Authentication successful via OAuth`);
       console.error(`[${timestamp}] === END /authenticate request (SUCCESS - OAuth) ===`);

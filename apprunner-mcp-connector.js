@@ -90,24 +90,24 @@ class AppRunnerMCPConnector {
         tools: [
           {
             name: 'authenticate_fenergo',
-            description: 'Authenticate with Fenergo Nebula API. Uses OAuth client_credentials flow. Must be called first before using investigate_journey. Caches token for the session.',
+            description: 'Authenticate with Fenergo Nebula API using your Fenergo user credentials. Uses OAuth password grant flow. Must be called first before using investigate_journey. Caches token for the session.',
             inputSchema: {
               type: 'object',
               properties: {
-                tenantId: {
-                  type: 'string',
-                  description: 'Fenergo Tenant ID (GUID format)'
-                },
                 username: {
                   type: 'string',
-                  description: 'Fenergo user email/username (optional, not used with client_credentials flow)'
+                  description: 'Fenergo user email/username'
                 },
                 password: {
                   type: 'string',
-                  description: 'Fenergo user password (optional, not used with client_credentials flow)'
+                  description: 'Fenergo user password'
+                },
+                tenantId: {
+                  type: 'string',
+                  description: 'Fenergo Tenant ID (GUID format)'
                 }
               },
-              required: ['tenantId']
+              required: ['username', 'password', 'tenantId']
             }
           },
           {
@@ -195,15 +195,15 @@ class AppRunnerMCPConnector {
       console.error(`[${timestamp}]   username: ${username}`);
       console.error(`[${timestamp}]   tenantId: ${tenantId}`);
 
-      // Validate inputs (only tenantId is required for client_credentials flow)
-      if (!tenantId) {
-        console.error(`[${timestamp}] Validation failed - missing required tenantId`);
+      // Validate inputs (username, password, and tenantId required for password grant flow)
+      if (!username || !password || !tenantId) {
+        console.error(`[${timestamp}] Validation failed - missing required parameters`);
         return {
           isError: true,
           content: [
             {
               type: 'text',
-              text: 'Missing required parameter: tenantId'
+              text: 'Missing required parameters: username, password, and tenantId'
             }
           ]
         };
