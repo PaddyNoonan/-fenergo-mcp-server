@@ -26,6 +26,9 @@ class AppRunnerMCPConnector {
         tokenType: 'Bearer'
       };
 
+      // SSO session state management
+      this.ssoSessions = new Map(); // Maps state tokens to session data
+
       this.server = new Server(
         {
           name: 'apprunner-mcp-connector',
@@ -133,6 +136,38 @@ class AppRunnerMCPConnector {
               type: 'object',
               properties: {}
             }
+          },
+          {
+            name: 'authenticate_fenergo_sso_initiate',
+            description: 'Initiate SSO (Single Sign-On) authentication flow with Fenergo. Returns a login URL that the user must visit to authenticate with their Fenergo credentials. Must be called before authenticate_fenergo_sso_complete.',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                tenantId: {
+                  type: 'string',
+                  description: 'Fenergo Tenant ID (GUID format)'
+                }
+              },
+              required: ['tenantId']
+            }
+          },
+          {
+            name: 'authenticate_fenergo_sso_complete',
+            description: 'Complete SSO authentication by providing the authorization code received from the callback URL. Must be called after authenticate_fenergo_sso_initiate and the user has logged in.',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                code: {
+                  type: 'string',
+                  description: 'Authorization code from the SSO callback URL (code parameter)'
+                },
+                state: {
+                  type: 'string',
+                  description: 'State token from SSO initiation (for CSRF validation)'
+                }
+              },
+              required: ['code', 'state']
+            }
           }
         ]
       };
@@ -160,6 +195,16 @@ class AppRunnerMCPConnector {
         console.error(`[${timestamp}] Handling health check request`);
         const result = await this.handleHealthCheck();
         console.error(`[${timestamp}] health check response:`, JSON.stringify(result, null, 2));
+        return result;
+      } else if (name === 'authenticate_fenergo_sso_initiate') {
+        console.error(`[${timestamp}] Handling SSO initiate request`);
+        const result = await this.handleSSO_Initiate(args);
+        console.error(`[${timestamp}] SSO initiate response:`, JSON.stringify(result, null, 2));
+        return result;
+      } else if (name === 'authenticate_fenergo_sso_complete') {
+        console.error(`[${timestamp}] Handling SSO complete request`);
+        const result = await this.handleSSO_Complete(args);
+        console.error(`[${timestamp}] SSO complete response:`, JSON.stringify(result, null, 2));
         return result;
       } else {
         console.error(`[${timestamp}] Unknown tool requested: ${name}`);
@@ -411,6 +456,220 @@ class AppRunnerMCPConnector {
     }
   }
 
+  async handleSSO_Initiate(args) {
+    const timestamp = new Date().toISOString();
+    console.error(`[${timestamp}] === START handleSSO_Initiate ===`);
+
+    try {
+      const { tenantId } = args;
+
+      console.error(`[${timestamp}] Received SSO initiate parameters:`);
+      console.error(`[${timestamp}]   tenantId: ${tenantId}`);
+
+      // Validate inputs
+      if (!tenantId) {
+        console.error(`[${timestamp}] Validation failed - missing required tenantId`);
+        return {
+          isError: true,
+          content: [
+            {
+              type: 'text',
+              text: 'Missing required parameter: tenantId'
+            }
+          ]
+        };
+      }
+
+      console.error(`[${timestamp}] Validation passed`);
+      console.error(`[${timestamp}] Calling AppRunner /auth/login endpoint`);
+
+      // Call AppRunner /auth/login endpoint
+      const response = await this.callAppRunnerSSO(tenantId);
+
+      console.error(`[${timestamp}] SSO login response received:`);
+      console.error(`[${timestamp}]   Status Code: ${response.statusCode}`);
+      console.error(`[${timestamp}]   Response Data:`, JSON.stringify(response.data, null, 2));
+
+      // Check for success
+      if (response.statusCode !== 200 || !response.data.success) {
+        const errorMsg = response.data.message || response.data.error || 'SSO login initiation failed';
+        console.error(`[${timestamp}] SSO login initiation failed: ${errorMsg}`);
+        console.error(`[${timestamp}] === END handleSSO_Initiate (FAILED) ===`);
+        return {
+          isError: true,
+          content: [
+            {
+              type: 'text',
+              text: `SSO login initiation failed: ${errorMsg}`
+            }
+          ]
+        };
+      }
+
+      // Store SSO session data
+      const ssoData = response.data;
+      const state = ssoData.state;
+      this.ssoSessions.set(state, {
+        tenantId: tenantId,
+        state: state,
+        createdAt: Date.now()
+      });
+
+      console.error(`[${timestamp}] SSO session created and stored`);
+      console.error(`[${timestamp}]   State: ${state}`);
+      console.error(`[${timestamp}] === END handleSSO_Initiate (SUCCESS) ===`);
+
+      // Return user-friendly instructions
+      const instructionText = `SSO Login Initiated Successfully!
+
+Please visit the following URL to log in with your Fenergo credentials:
+
+${ssoData.authorizationUrl}
+
+After logging in, you will be redirected to the callback page. You will receive an authorization code and state token. Once you have the authorization code, use the authenticate_fenergo_sso_complete tool with:
+- code: [the authorization code from the callback URL]
+- state: ${state}
+
+State Token (for verification): ${state}
+Tenant ID: ${tenantId}`;
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: instructionText
+          }
+        ],
+        isError: false
+      };
+    } catch (error) {
+      console.error(`[${timestamp}] ERROR in handleSSO_Initiate:`, error.message);
+      console.error(`[${timestamp}] Error stack:`, error.stack);
+      console.error(`[${timestamp}] === END handleSSO_Initiate (ERROR) ===`);
+
+      return {
+        isError: true,
+        content: [
+          {
+            type: 'text',
+            text: `SSO initiation error: ${error.message}`
+          }
+        ]
+      };
+    }
+  }
+
+  async handleSSO_Complete(args) {
+    const timestamp = new Date().toISOString();
+    console.error(`[${timestamp}] === START handleSSO_Complete ===`);
+
+    try {
+      const { code, state } = args;
+
+      console.error(`[${timestamp}] Received SSO complete parameters:`);
+      console.error(`[${timestamp}]   code: ${code.substring(0, 20)}...`);
+      console.error(`[${timestamp}]   state: ${state.substring(0, 20)}...`);
+
+      // Validate inputs
+      if (!code || !state) {
+        console.error(`[${timestamp}] Validation failed - missing required parameters`);
+        return {
+          isError: true,
+          content: [
+            {
+              type: 'text',
+              text: 'Missing required parameters: code or state'
+            }
+          ]
+        };
+      }
+
+      // Verify state token
+      const ssoSession = this.ssoSessions.get(state);
+      if (!ssoSession) {
+        console.error(`[${timestamp}] SSO session not found for state: ${state}`);
+        console.error(`[${timestamp}] Available states:`, Array.from(this.ssoSessions.keys()).map(s => s.substring(0, 20) + '...'));
+        return {
+          isError: true,
+          content: [
+            {
+              type: 'text',
+              text: 'Invalid state token: SSO session not found. Please initiate SSO login again with authenticate_fenergo_sso_initiate.'
+            }
+          ]
+        };
+      }
+
+      console.error(`[${timestamp}] SSO session validated`);
+      console.error(`[${timestamp}]   Tenant ID: ${ssoSession.tenantId}`);
+
+      // Call AppRunner /auth/callback endpoint to exchange code for token
+      const response = await this.callAppRunnerSSO_Callback(code, state);
+
+      console.error(`[${timestamp}] SSO callback response received:`);
+      console.error(`[${timestamp}]   Status Code: ${response.statusCode}`);
+      console.error(`[${timestamp}]   Response Data:`, JSON.stringify(response.data, null, 2));
+
+      // Check for success
+      if (response.statusCode !== 200 || !response.data.success) {
+        const errorMsg = response.data.message || response.data.error || 'SSO code exchange failed';
+        console.error(`[${timestamp}] SSO code exchange failed: ${errorMsg}`);
+        console.error(`[${timestamp}] === END handleSSO_Complete (FAILED) ===`);
+        return {
+          isError: true,
+          content: [
+            {
+              type: 'text',
+              text: `SSO authentication failed: ${errorMsg}`
+            }
+          ]
+        };
+      }
+
+      // Cache token in session
+      const tokenResponse = response.data;
+      this.tokenCache.accessToken = tokenResponse.accessToken;
+      this.tokenCache.tokenType = tokenResponse.tokenType || 'Bearer';
+
+      // Calculate token expiration time
+      if (tokenResponse.expiresIn) {
+        this.tokenCache.expiresAt = new Date(Date.now() + tokenResponse.expiresIn * 1000);
+      }
+
+      // Clean up SSO session
+      this.ssoSessions.delete(state);
+
+      console.error(`[${timestamp}] Token cached successfully`);
+      console.error(`[${timestamp}]   Token Type: ${this.tokenCache.tokenType}`);
+      console.error(`[${timestamp}]   Expires At: ${this.tokenCache.expiresAt}`);
+      console.error(`[${timestamp}] === END handleSSO_Complete (SUCCESS) ===`);
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Successfully authenticated via SSO for tenant ${ssoSession.tenantId}. Token cached for session. You can now use the investigate_journey tool.`
+          }
+        ],
+        isError: false
+      };
+    } catch (error) {
+      console.error(`[${timestamp}] ERROR in handleSSO_Complete:`, error.message);
+      console.error(`[${timestamp}] Error stack:`, error.stack);
+      console.error(`[${timestamp}] === END handleSSO_Complete (ERROR) ===`);
+
+      return {
+        isError: true,
+        content: [
+          {
+            type: 'text',
+            text: `SSO completion error: ${error.message}`
+          }
+        ]
+      };
+    }
+  }
+
   async callAppRunnerAPI(payload, authToken = null, retryCount = 0) {
     return new Promise((resolve, reject) => {
       const timestamp = new Date().toISOString();
@@ -602,6 +861,161 @@ class AppRunnerMCPConnector {
       console.error(`[${timestamp}] [AUTH] Writing payload to request...`);
       req.write(postData);
       console.error(`[${timestamp}] [AUTH] Calling req.end()...`);
+      req.end();
+    });
+  }
+
+  async callAppRunnerSSO(tenantId) {
+    return new Promise((resolve, reject) => {
+      const timestamp = new Date().toISOString();
+      const postData = JSON.stringify({ tenantId });
+      const url = new URL(`${this.config.apprunnerUrl}/auth/login`);
+
+      const options = {
+        hostname: url.hostname,
+        port: url.port || 443,
+        path: url.pathname,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Content-Length': Buffer.byteLength(postData)
+        },
+        timeout: this.config.timeout
+      };
+
+      console.error(`[${timestamp}] [SSO] === START SSO Login Request ===`);
+      console.error(`[${timestamp}] [SSO] Endpoint: ${url.hostname}${options.path}`);
+      console.error(`[${timestamp}] [SSO] Tenant ID: ${tenantId}`);
+
+      const req = https.request(options, (res) => {
+        let data = '';
+
+        console.error(`[${timestamp}] [SSO] Response status: ${res.statusCode}`);
+
+        res.on('data', chunk => {
+          data += chunk;
+          console.error(`[${timestamp}] [SSO] Data chunk received (${chunk.length} bytes)`);
+        });
+
+        res.on('end', () => {
+          console.error(`[${timestamp}] [SSO] All data received (${data.length} bytes)`);
+          console.error(`[${timestamp}] [SSO] Response body:`, data);
+
+          try {
+            const parsedData = JSON.parse(data);
+            console.error(`[${timestamp}] [SSO] Parsed JSON response:`, JSON.stringify(parsedData, null, 2));
+            console.error(`[${timestamp}] [SSO] === END SSO Login Request (SUCCESS) ===`);
+            resolve({
+              statusCode: res.statusCode,
+              data: parsedData
+            });
+          } catch (e) {
+            console.error(`[${timestamp}] [SSO] Failed to parse response as JSON: ${e.message}`);
+            console.error(`[${timestamp}] [SSO] === END SSO Login Request (PARSE_ERROR) ===`);
+            resolve({
+              statusCode: res.statusCode,
+              data: { raw: data }
+            });
+          }
+        });
+      });
+
+      req.on('error', (err) => {
+        console.error(`[${timestamp}] [SSO] === Request ERROR ===`);
+        console.error(`[${timestamp}] [SSO] Error: ${err.message}`);
+        console.error(`[${timestamp}] [SSO] Code: ${err.code}`);
+        console.error(`[${timestamp}] [SSO] Stack:`, err.stack);
+        reject(err);
+      });
+
+      req.on('timeout', () => {
+        console.error(`[${timestamp}] [SSO] === Request TIMEOUT ===`);
+        req.destroy();
+        reject(new Error('SSO login request timeout'));
+      });
+
+      console.error(`[${timestamp}] [SSO] Writing payload to request...`);
+      req.write(postData);
+      console.error(`[${timestamp}] [SSO] Calling req.end()...`);
+      req.end();
+    });
+  }
+
+  async callAppRunnerSSO_Callback(code, state) {
+    return new Promise((resolve, reject) => {
+      const timestamp = new Date().toISOString();
+      const postData = JSON.stringify({ code, state });
+      const url = new URL(`${this.config.apprunnerUrl}/auth/callback`);
+
+      const options = {
+        hostname: url.hostname,
+        port: url.port || 443,
+        path: url.pathname,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Content-Length': Buffer.byteLength(postData)
+        },
+        timeout: this.config.timeout
+      };
+
+      console.error(`[${timestamp}] [SSO_CB] === START SSO Callback Request ===`);
+      console.error(`[${timestamp}] [SSO_CB] Endpoint: ${url.hostname}${options.path}`);
+      console.error(`[${timestamp}] [SSO_CB] Code: ${code.substring(0, 20)}...`);
+      console.error(`[${timestamp}] [SSO_CB] State: ${state.substring(0, 20)}...`);
+
+      const req = https.request(options, (res) => {
+        let data = '';
+
+        console.error(`[${timestamp}] [SSO_CB] Response status: ${res.statusCode}`);
+
+        res.on('data', chunk => {
+          data += chunk;
+          console.error(`[${timestamp}] [SSO_CB] Data chunk received (${chunk.length} bytes)`);
+        });
+
+        res.on('end', () => {
+          console.error(`[${timestamp}] [SSO_CB] All data received (${data.length} bytes)`);
+          console.error(`[${timestamp}] [SSO_CB] Response body:`, data);
+
+          try {
+            const parsedData = JSON.parse(data);
+            console.error(`[${timestamp}] [SSO_CB] Parsed JSON response:`, JSON.stringify(parsedData, null, 2));
+            console.error(`[${timestamp}] [SSO_CB] === END SSO Callback Request (SUCCESS) ===`);
+            resolve({
+              statusCode: res.statusCode,
+              data: parsedData
+            });
+          } catch (e) {
+            console.error(`[${timestamp}] [SSO_CB] Failed to parse response as JSON: ${e.message}`);
+            console.error(`[${timestamp}] [SSO_CB] === END SSO Callback Request (PARSE_ERROR) ===`);
+            resolve({
+              statusCode: res.statusCode,
+              data: { raw: data }
+            });
+          }
+        });
+      });
+
+      req.on('error', (err) => {
+        console.error(`[${timestamp}] [SSO_CB] === Request ERROR ===`);
+        console.error(`[${timestamp}] [SSO_CB] Error: ${err.message}`);
+        console.error(`[${timestamp}] [SSO_CB] Code: ${err.code}`);
+        console.error(`[${timestamp}] [SSO_CB] Stack:`, err.stack);
+        reject(err);
+      });
+
+      req.on('timeout', () => {
+        console.error(`[${timestamp}] [SSO_CB] === Request TIMEOUT ===`);
+        req.destroy();
+        reject(new Error('SSO callback request timeout'));
+      });
+
+      console.error(`[${timestamp}] [SSO_CB] Writing payload to request...`);
+      req.write(postData);
+      console.error(`[${timestamp}] [SSO_CB] Calling req.end()...`);
       req.end();
     });
   }
