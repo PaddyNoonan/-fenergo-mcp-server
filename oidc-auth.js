@@ -14,9 +14,9 @@ class FenergoOIDCAuth {
   constructor(options = {}) {
     this.authorityUrl = options.authorityUrl || 'https://identity.fenxstable.com';
     this.clientId = options.clientId || 'mcp-client';
-    this.clientSecret = options.clientSecret;
-    this.redirectUri = options.redirectUri || 'https://tc8srxrkcp.eu-west-1.awsapprunner.com/auth/callback';
-    this.scopes = options.scopes || ['openid', 'profile', 'email'];
+    this.clientSecret = options.clientSecret || '4FrT36SL56ckoCpbo13mwRdsTWwi+P7xjJNdtVjoSRU=';
+    this.redirectUri = options.redirectUri || 'https://tc8srxrkcp.eu-west-1.awsapprunner.com/signin-oidc';
+    this.scopes = options.scopes || ['openid', 'profile'];
 
     // Token cache per session/tenant
     this.tokenCache = new Map();
