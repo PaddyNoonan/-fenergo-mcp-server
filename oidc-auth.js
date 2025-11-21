@@ -103,8 +103,16 @@ class FenergoOIDCAuth {
       console.error(`[${timestamp}] [OIDC] Redirect URI: ${this.redirectUri}`);
       console.error(`[${timestamp}] [OIDC] Code: ${code.substring(0, 20)}...`);
       console.error(`[${timestamp}] [OIDC] State: ${state.substring(0, 20)}...`);
-      console.error(`[${timestamp}] [OIDC] Request Body: ${postBody}`);
+      console.error(`[${timestamp}] [OIDC] Request Body (raw): ${postBody}`);
+      console.error(`[${timestamp}] [OIDC] Request Body (parsed):`, {
+        grant_type: 'authorization_code',
+        code: code.substring(0, 20) + '...',
+        client_id: this.clientId,
+        client_secret: this.clientSecret ? '[SET]' : '[NOT SET]',
+        redirect_uri: this.redirectUri
+      });
       console.error(`[${timestamp}] [OIDC] Headers:`, JSON.stringify(headers, null, 2));
+      console.error(`[${timestamp}] [OIDC] Target URL: ${this.authorityUrl}/connect/token`);
 
       const req = https.request(options, (res) => {
         let data = '';
