@@ -2,8 +2,8 @@
 
 /**
  * OAuth 2.0 Authentication Module for Fenergo Nebula API
- * Implements Resource Owner Password Credentials flow
- * Used for obtaining Bearer tokens from user credentials
+ * Implements Client Credentials flow (service-to-service authentication)
+ * Used for obtaining Bearer tokens from OAuth client credentials
  */
 
 import https from 'https';
@@ -22,44 +22,34 @@ class FenergoOAuthAuth {
   }
 
   /**
-   * Get access token using password grant (user authentication)
-   * @param {string} username - User email/username
-   * @param {string} password - User password
+   * Get access token using client credentials (service-to-service authentication)
    * @param {string} tenantId - Tenant ID (passed as X-Tenant-Id header)
    * @returns {Promise<object>} Token response with access_token and expires_in
    */
-  async authenticate(username, password, tenantId) {
+  async authenticate(tenantId) {
     if (!tenantId) {
       throw new Error('OAuth: tenantId is required');
     }
 
-    if (!username || !password) {
-      throw new Error('OAuth: username and password are required for password grant flow');
-    }
-
-    const token = await this.requestToken(username, password, tenantId);
+    const token = await this.requestToken(tenantId);
     return token;
   }
 
   /**
-   * Request token from OAuth endpoint using password grant (user credentials)
-   * @param {string} username - User email/username
-   * @param {string} password - User password
+   * Request token from OAuth endpoint using client credentials grant
    * @param {string} tenantId - Tenant ID (passed as X-Tenant-Id header)
    * @returns {Promise<object>} Token response
    */
-  requestToken(username, password, tenantId) {
+  requestToken(tenantId) {
     return new Promise((resolve, reject) => {
       const timestamp = new Date().toISOString();
 
-      // Prepare request body for password grant (user authentication)
+      // Prepare request body for client credentials grant (service-to-service)
       const postData = new URLSearchParams();
-      postData.append('grant_type', 'password');
+      postData.append('grant_type', 'client_credentials');
       postData.append('scope', this.scopes);
-      postData.append('username', username);
-      postData.append('password', password);
 
-      // Add client credentials (required for password grant)
+      // Add client credentials
       if (this.clientId) {
         postData.append('client_id', this.clientId);
       }

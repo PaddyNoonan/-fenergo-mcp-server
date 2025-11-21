@@ -69,23 +69,23 @@ app.post('/authenticate', async (req, res) => {
   console.error(`[${timestamp}] === START /authenticate request ===`);
 
   try {
-    // For password grant flow, username, password, and tenantId are all required
-    const { username, password, tenantId } = req.body;
+    // For client credentials grant flow, only tenantId is required
+    const { tenantId } = req.body;
 
     // Validate input
-    if (!username || !password || !tenantId) {
-      console.error(`[${timestamp}] ERROR: Missing required fields`);
+    if (!tenantId) {
+      console.error(`[${timestamp}] ERROR: Missing required field - tenantId`);
       return res.status(400).json({
-        error: 'Missing required fields: username, password, or tenantId',
+        error: 'Missing required field: tenantId',
         timestamp
       });
     }
 
-    console.error(`[${timestamp}] Authenticating user: ${username}`);
+    console.error(`[${timestamp}] Authenticating with client credentials for tenant: ${tenantId}`);
 
-    // Try OAuth token exchange (password grant flow)
+    // Try OAuth token exchange (client credentials grant flow)
     try {
-      const tokenResponse = await oauthAuth.authenticate(username, password, tenantId);
+      const tokenResponse = await oauthAuth.authenticate(tenantId);
 
       console.error(`[${timestamp}] Authentication successful via OAuth`);
       console.error(`[${timestamp}] === END /authenticate request (SUCCESS - OAuth) ===`);
@@ -104,7 +104,7 @@ app.post('/authenticate', async (req, res) => {
       console.error(`[${timestamp}] OAuth credentials may be invalid. Check:`);
       console.error(`[${timestamp}]   - FENERGO_CLIENT_ID is registered in OAuth provider`);
       console.error(`[${timestamp}]   - FENERGO_CLIENT_SECRET is correct`);
-      console.error(`[${timestamp}]   - Client credentials are enabled for client_credentials grant flow`);
+      console.error(`[${timestamp}]   - Client is enabled for client_credentials grant type`);
 
       // Fallback: If OAuth fails and we have a static token configured, return it
       if (API_TOKEN) {

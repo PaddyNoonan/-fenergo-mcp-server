@@ -90,24 +90,16 @@ class AppRunnerMCPConnector {
         tools: [
           {
             name: 'authenticate_fenergo',
-            description: 'Authenticate with Fenergo Nebula API using your Fenergo user credentials. Uses OAuth password grant flow. Must be called first before using investigate_journey. Caches token for the session.',
+            description: 'Authenticate with Fenergo Nebula API using client credentials. Uses OAuth client_credentials grant flow. Must be called first before using investigate_journey. Caches token for the session.',
             inputSchema: {
               type: 'object',
               properties: {
-                username: {
-                  type: 'string',
-                  description: 'Fenergo user email/username'
-                },
-                password: {
-                  type: 'string',
-                  description: 'Fenergo user password'
-                },
                 tenantId: {
                   type: 'string',
                   description: 'Fenergo Tenant ID (GUID format)'
                 }
               },
-              required: ['username', 'password', 'tenantId']
+              required: ['tenantId']
             }
           },
           {
@@ -189,21 +181,20 @@ class AppRunnerMCPConnector {
     console.error(`[${timestamp}] === START handleAuthenticateFenergo ===`);
 
     try {
-      const { username, password, tenantId } = args;
+      const { tenantId } = args;
 
       console.error(`[${timestamp}] Received authentication parameters:`);
-      console.error(`[${timestamp}]   username: ${username}`);
       console.error(`[${timestamp}]   tenantId: ${tenantId}`);
 
-      // Validate inputs (username, password, and tenantId required for password grant flow)
-      if (!username || !password || !tenantId) {
-        console.error(`[${timestamp}] Validation failed - missing required parameters`);
+      // Validate inputs (only tenantId required for client_credentials grant flow)
+      if (!tenantId) {
+        console.error(`[${timestamp}] Validation failed - missing required tenantId`);
         return {
           isError: true,
           content: [
             {
               type: 'text',
-              text: 'Missing required parameters: username, password, and tenantId'
+              text: 'Missing required parameter: tenantId'
             }
           ]
         };
@@ -213,7 +204,7 @@ class AppRunnerMCPConnector {
       console.error(`[${timestamp}] Calling AppRunner /authenticate endpoint`);
 
       // Call AppRunner /authenticate endpoint
-      const response = await this.callAppRunnerAuthenticate(username, password, tenantId);
+      const response = await this.callAppRunnerAuthenticate(tenantId);
 
       console.error(`[${timestamp}] Authentication response received:`);
       console.error(`[${timestamp}]   Status Code: ${response.statusCode}`);
@@ -538,10 +529,10 @@ class AppRunnerMCPConnector {
     });
   }
 
-  async callAppRunnerAuthenticate(username, password, tenantId) {
+  async callAppRunnerAuthenticate(tenantId) {
     return new Promise((resolve, reject) => {
       const timestamp = new Date().toISOString();
-      const postData = JSON.stringify({ username, password, tenantId });
+      const postData = JSON.stringify({ tenantId });
       const url = new URL(`${this.config.apprunnerUrl}/authenticate`);
 
       const options = {
@@ -559,7 +550,6 @@ class AppRunnerMCPConnector {
 
       console.error(`[${timestamp}] [AUTH] === START Authentication Request ===`);
       console.error(`[${timestamp}] [AUTH] Endpoint: ${url.hostname}${options.path}`);
-      console.error(`[${timestamp}] [AUTH] Username: ${username}`);
       console.error(`[${timestamp}] [AUTH] Tenant ID: ${tenantId}`);
 
       const req = https.request(options, (res) => {
