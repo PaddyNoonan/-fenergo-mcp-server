@@ -34,8 +34,7 @@ class FenergoOIDCAuth {
       response_type: 'code',
       scope: this.scopes.join(' '),
       redirect_uri: this.redirectUri,
-      state: state,
-      prompt: 'login' // Force fresh login
+      state: state
     });
 
     // Note: tenantId is stored server-side in session, not passed to identity provider
