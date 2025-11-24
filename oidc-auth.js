@@ -83,10 +83,12 @@ class FenergoOIDCAuth {
     return new Promise((resolve, reject) => {
       const timestamp = new Date().toISOString();
 
-      // Prepare token request body (client auth via HTTP Basic Auth header, not in body)
+      // Prepare token request body with client credentials in POST body (not HTTP Basic Auth)
       const postData = new URLSearchParams({
         grant_type: 'authorization_code',
         code: code,
+        client_id: this.clientId,
+        client_secret: this.clientSecret,
         redirect_uri: this.redirectUri,
         code_verifier: codeVerifier
       });
@@ -94,15 +96,11 @@ class FenergoOIDCAuth {
       const url = new URL(`${this.authorityUrl}/connect/token`);
       const postBody = postData.toString();
 
-      // Use HTTP Basic Auth for client authentication (instead of POST body)
-      const basicAuth = Buffer.from(`${this.clientId}:${this.clientSecret}`).toString('base64');
-
       const headers = {
         'Content-Type': 'application/x-www-form-urlencoded',
         'Content-Length': Buffer.byteLength(postBody),
         'Accept': 'application/json',
-        'User-Agent': 'Fenergo-OIDC-Client/1.0',
-        'Authorization': `Basic ${basicAuth}`
+        'User-Agent': 'Fenergo-OIDC-Client/1.0'
       };
 
       const options = {
