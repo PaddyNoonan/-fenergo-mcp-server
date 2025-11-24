@@ -83,11 +83,10 @@ class FenergoOIDCAuth {
     return new Promise((resolve, reject) => {
       const timestamp = new Date().toISOString();
 
-      // Prepare token request body
+      // Prepare token request body (client auth via HTTP Basic Auth header, not in body)
       const postData = new URLSearchParams({
         grant_type: 'authorization_code',
         code: code,
-        client_id: this.clientId,
         redirect_uri: this.redirectUri,
         code_verifier: codeVerifier
       });
