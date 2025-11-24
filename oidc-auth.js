@@ -23,22 +23,45 @@ class FenergoOIDCAuth {
   }
 
   /**
-   * Generate authorization URL for user login
+   * Generate PKCE code verifier and challenge
+   * @returns {object} { codeVerifier, codeChallenge }
+   */
+  generatePKCE() {
+    const codeVerifier = crypto.randomBytes(32).toString('base64url');
+    const codeChallenge = crypto
+      .createHash('sha256')
+      .update(codeVerifier)
+      .digest('base64url');
+    return { codeVerifier, codeChallenge };
+  }
+
+  /**
+   * Generate authorization URL for user login with PKCE
    * @param {string} tenantId - Tenant ID for multi-tenancy
    * @param {string} state - CSRF protection state token
-   * @returns {string} Authorization URL
+   * @returns {object} { authorizationUrl, codeVerifier, state }
    */
   getAuthorizationUrl(tenantId, state) {
+    const { codeVerifier, codeChallenge } = this.generatePKCE();
+
     const params = new URLSearchParams({
       client_id: this.clientId,
       response_type: 'code',
       scope: this.scopes.join(' '),
       redirect_uri: this.redirectUri,
-      state: state
+      state: state,
+      code_challenge: codeChallenge,
+      code_challenge_method: 'S256'
     });
 
     // Note: tenantId is stored server-side in session, not passed to identity provider
-    return `${this.authorityUrl}/connect/authorize?${params.toString()}`;
+    const authorizationUrl = `${this.authorityUrl}/connect/authorize?${params.toString()}`;
+
+    return {
+      authorizationUrl,
+      codeVerifier,
+      state
+    };
   }
 
   /**
@@ -53,9 +76,10 @@ class FenergoOIDCAuth {
    * Exchange authorization code for access token
    * @param {string} code - Authorization code from callback
    * @param {string} state - State token for CSRF verification
+   * @param {string} codeVerifier - PKCE code verifier
    * @returns {Promise<object>} Token response with access_token, refresh_token, etc.
    */
-  async exchangeCodeForToken(code, state) {
+  async exchangeCodeForToken(code, state, codeVerifier) {
     return new Promise((resolve, reject) => {
       const timestamp = new Date().toISOString();
 
@@ -65,7 +89,8 @@ class FenergoOIDCAuth {
         code: code,
         client_id: this.clientId,
         client_secret: this.clientSecret,
-        redirect_uri: this.redirectUri
+        redirect_uri: this.redirectUri,
+        code_verifier: codeVerifier
       });
 
       const url = new URL(`${this.authorityUrl}/connect/token`);

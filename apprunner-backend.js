@@ -259,17 +259,18 @@ app.post('/auth/login', async (req, res) => {
     const state = oidcAuth.generateState();
     console.error(`[${timestamp}] Generated state token for CSRF protection`);
 
-    // Generate authorization URL
-    const authorizationUrl = oidcAuth.getAuthorizationUrl(tenantId, state);
-    console.error(`[${timestamp}] Generated authorization URL`);
+    // Generate authorization URL with PKCE
+    const { authorizationUrl, codeVerifier } = oidcAuth.getAuthorizationUrl(tenantId, state);
+    console.error(`[${timestamp}] Generated authorization URL with PKCE code challenge`);
 
-    // Store state in session for later validation in callback
+    // Store state and code verifier in session for later validation in callback
     sessionStore.set(state, {
       tenantId: tenantId,
+      codeVerifier: codeVerifier,
       createdAt: Date.now(),
       expiresAt: Date.now() + (15 * 60 * 1000) // 15 minute expiry
     });
-    console.error(`[${timestamp}] State stored in session (expires in 15 minutes)`);
+    console.error(`[${timestamp}] State and code verifier stored in session (expires in 15 minutes)`);
 
     console.error(`[${timestamp}] === END /auth/login request (SUCCESS) ===`);
 
@@ -360,11 +361,13 @@ app.all('/signin-oidc', async (req, res) => {
     }
 
     const tenantId = sessionData.tenantId;
+    const codeVerifier = sessionData.codeVerifier;
     console.error(`[${timestamp}] State validated successfully for tenant: ${tenantId}`);
+    console.error(`[${timestamp}] Code verifier retrieved from session`);
 
-    // Exchange authorization code for tokens
-    console.error(`[${timestamp}] Exchanging authorization code for tokens...`);
-    const tokenResponse = await oidcAuth.exchangeCodeForToken(code, state);
+    // Exchange authorization code for tokens (with PKCE code verifier)
+    console.error(`[${timestamp}] Exchanging authorization code for tokens with PKCE...`);
+    const tokenResponse = await oidcAuth.exchangeCodeForToken(code, state, codeVerifier);
     console.error(`[${timestamp}] Token exchange successful`);
 
     // Cache the token for this user session
