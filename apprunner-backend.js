@@ -3,6 +3,7 @@
 /**
  * AppRunner Backend Service for Fenergo Insights API
  * Runs on AWS AppRunner and provides /execute endpoint for MCP connector
+ * Updated with PKCE support for Fenergo OIDC
  * Handles requests with payload structure:
  * {
  *   "data": {
