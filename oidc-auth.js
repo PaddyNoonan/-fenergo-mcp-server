@@ -14,7 +14,7 @@ class FenergoOIDCAuth {
   constructor(options = {}) {
     this.authorityUrl = options.authorityUrl || 'https://identity.fenxstable.com';
     this.clientId = options.clientId || 'mcp-client';
-    this.clientSecret = options.clientSecret || '4Ffi36SL56ckoCpbo13mwRdsTWwi+P7xJNdtVjoSRU=';
+    this.clientSecret = options.clientSecret || '4Ffi36SL56ckoCpbo13mwRdsTWwi+P7xJjNdtVjoSRU=';
     this.redirectUri = options.redirectUri || 'https://tc8srxrkcp.eu-west-1.awsapprunner.com/signin-oidc';
     this.scopes = options.scopes || ['openid', 'profile'];
 
@@ -88,7 +88,6 @@ class FenergoOIDCAuth {
         grant_type: 'authorization_code',
         code: code,
         client_id: this.clientId,
-        client_secret: this.clientSecret,
         redirect_uri: this.redirectUri,
         code_verifier: codeVerifier
       });
@@ -96,11 +95,15 @@ class FenergoOIDCAuth {
       const url = new URL(`${this.authorityUrl}/connect/token`);
       const postBody = postData.toString();
 
+      // Use HTTP Basic Auth for client authentication (instead of POST body)
+      const basicAuth = Buffer.from(`${this.clientId}:${this.clientSecret}`).toString('base64');
+
       const headers = {
         'Content-Type': 'application/x-www-form-urlencoded',
         'Content-Length': Buffer.byteLength(postBody),
         'Accept': 'application/json',
-        'User-Agent': 'Fenergo-OIDC-Client/1.0'
+        'User-Agent': 'Fenergo-OIDC-Client/1.0',
+        'Authorization': `Basic ${basicAuth}`
       };
 
       const options = {
