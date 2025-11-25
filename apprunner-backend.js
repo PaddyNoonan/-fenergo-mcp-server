@@ -549,6 +549,110 @@ app.all('/auth/callback', async (req, res) => {
   }
 });
 
+// Debug endpoint - test API calls and inspect responses
+app.post('/debug/test-api', async (req, res) => {
+  const timestamp = new Date().toISOString();
+  console.error(`[${timestamp}] === START /debug/test-api request ===`);
+
+  try {
+    const { bearerToken, tenantId, payload } = req.body;
+
+    if (!bearerToken || !tenantId || !payload) {
+      return res.status(400).json({
+        error: 'Missing required fields',
+        required: ['bearerToken', 'tenantId', 'payload']
+      });
+    }
+
+    console.error(`[${timestamp}] [DEBUG] Tenant ID: ${tenantId}`);
+    console.error(`[${timestamp}] [DEBUG] Bearer Token: ${bearerToken.substring(0, 50)}...`);
+    console.error(`[${timestamp}] [DEBUG] Payload:`, JSON.stringify(payload, null, 2));
+
+    // Make the API call with debug logging
+    const apiResponse = await callFenergoAPIDebug(payload, timestamp, `Bearer ${bearerToken}`, tenantId);
+
+    return res.json({
+      success: true,
+      statusCode: apiResponse.statusCode,
+      headers: apiResponse.headers,
+      body: apiResponse.body,
+      timestamp
+    });
+
+  } catch (error) {
+    console.error(`[${timestamp}] ERROR in /debug/test-api:`, error.message);
+    return res.status(500).json({
+      error: 'Test failed',
+      message: error.message,
+      timestamp
+    });
+  }
+});
+
+/**
+ * Debug version of Fenergo API call - returns full response
+ */
+function callFenergoAPIDebug(payload, timestamp, authHeader, tenantId) {
+  return new Promise((resolve, reject) => {
+    console.error(`[${timestamp}] [DEBUG-API] Calling ${FENERGO_API_URL}`);
+
+    const url = new URL(FENERGO_API_URL);
+    const postData = JSON.stringify(payload);
+
+    const options = {
+      hostname: url.hostname,
+      port: url.port || 443,
+      path: url.pathname + url.search,
+      method: 'POST',
+      headers: {
+        'Authorization': authHeader,
+        'Content-Type': 'application/json',
+        'X-Tenant-Id': tenantId,
+        'Accept': 'application/json',
+        'Content-Length': Buffer.byteLength(postData),
+        'User-Agent': 'AppRunner-Debug/1.0'
+      },
+      timeout: 30000
+    };
+
+    console.error(`[${timestamp}] [DEBUG-API] Options:`, JSON.stringify({
+      hostname: options.hostname,
+      path: options.path,
+      method: options.method,
+      headers: options.headers
+    }, null, 2));
+
+    const req = https.request(options, (res) => {
+      let data = '';
+
+      console.error(`[${timestamp}] [DEBUG-API] Response Status: ${res.statusCode}`);
+      console.error(`[${timestamp}] [DEBUG-API] Response Headers:`, JSON.stringify(res.headers, null, 2));
+
+      res.on('data', chunk => {
+        data += chunk;
+      });
+
+      res.on('end', () => {
+        console.error(`[${timestamp}] [DEBUG-API] Response Body:`, data);
+
+        resolve({
+          statusCode: res.statusCode,
+          headers: res.headers,
+          body: data
+        });
+      });
+    });
+
+    req.on('error', (err) => {
+      console.error(`[${timestamp}] [DEBUG-API] Request error:`, err.message);
+      reject(err);
+    });
+
+    req.write(postData);
+    req.end();
+  });
+}
+
 // Main execute endpoint
 app.post('/execute', async (req, res) => {
   const timestamp = new Date().toISOString();
