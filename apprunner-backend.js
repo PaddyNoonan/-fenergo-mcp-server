@@ -51,7 +51,7 @@ const FENERGO_OIDC_CLIENT_ID = process.env.FENERGO_OIDC_CLIENT_ID || 'mcp-client
 const FENERGO_OIDC_CLIENT_SECRET = process.env.FENERGO_OIDC_CLIENT_SECRET || 'd67105c0-52ca-164e-d0ea-b107cbbfdbc3';
 const FENERGO_OIDC_AUTHORITY = process.env.FENERGO_OIDC_AUTHORITY || 'https://identity.fenxstable.com';
 const FENERGO_OIDC_REDIRECT_URI = 'https://tc8srxrkcp.eu-west-1.awsapprunner.com/signin-oidc'; // Fenergo registered callback endpoint
-const FENERGO_OIDC_SCOPES = (process.env.FENERGO_OIDC_SCOPES || 'openid profile').split(' ');
+const FENERGO_OIDC_SCOPES = (process.env.FENERGO_OIDC_SCOPES || 'openid profile fenx.documents.read fenx.documents.write fenx.journey.read').split(' ');
 
 console.error('[STARTUP] OIDC Configuration:');
 console.error(`  FENERGO_OIDC_AUTHORITY: ${FENERGO_OIDC_AUTHORITY}`);
