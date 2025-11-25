@@ -14,7 +14,7 @@ class FenergoOIDCAuth {
   constructor(options = {}) {
     this.authorityUrl = options.authorityUrl || 'https://identity.fenxstable.com';
     this.clientId = options.clientId || 'mcp-client';
-    this.clientSecret = options.clientSecret || 'GKpbB0kB0y9a3MglFSFOTTDtQsXAtNLycog7W5+yQe8=';
+    this.clientSecret = options.clientSecret || 'd67105c0-52ca-164e-d0ea-b107cbbfdbc3';
     this.redirectUri = options.redirectUri || 'https://tc8srxrkcp.eu-west-1.awsapprunner.com/signin-oidc';
     this.scopes = options.scopes || ['openid', 'profile'];
 
