@@ -2,7 +2,20 @@
   "permissions": {
     "allow": [
       "Bash(curl -s -X POST \"https://brruyqnwu2.eu-west-1.awsapprunner.com/execute\" )",
-      "Bash(aws apprunner start-deployment:*)"
+      "Bash(aws apprunner start-deployment:*)",
+      "Bash(curl:*)",
+      "Bash(git push)",
+      "Bash(aws apprunner list-services:*)",
+      "Bash(aws logs tail:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(python3 -m json.tool:*)",
+      "Bash(dir /b test* 2)",
+      "Bash(nul)",
+      "Bash(node:*)",
+      "Bash(aws apprunner describe-service:*)",
+      "Bash(git push:*)",
+      "Bash(git rev-parse:*)"
     ],
     "deny": [],
     "ask": []

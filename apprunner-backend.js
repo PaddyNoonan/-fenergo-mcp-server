@@ -240,6 +240,45 @@ app.post('/authenticate', async (req, res) => {
   }
 });
 
+// Client Credentials Authentication endpoint - for Claude Desktop and service-to-service auth
+app.post('/authenticate-client-credentials', async (req, res) => {
+  const timestamp = new Date().toISOString();
+  console.error(`[${timestamp}] === START /authenticate-client-credentials request ===`);
+
+  try {
+    console.error(`[${timestamp}] Authenticating with OIDC client credentials`);
+
+    // Use the OIDC client credentials (mcp-client) in client credentials grant flow
+    const tokenResponse = await oidcAuth.authenticateClientCredentials();
+
+    console.error(`[${timestamp}] Authentication successful via Client Credentials`);
+    console.error(`[${timestamp}] === END /authenticate-client-credentials request (SUCCESS) ===`);
+
+    // Return token response
+    return res.json({
+      success: true,
+      accessToken: tokenResponse.accessToken,
+      tokenType: tokenResponse.tokenType,
+      expiresIn: tokenResponse.expiresIn,
+      scope: tokenResponse.scope,
+      message: 'Client credentials authentication successful',
+      timestamp
+    });
+
+  } catch (error) {
+    console.error(`[${timestamp}] ERROR in /authenticate-client-credentials:`, error.message);
+    console.error(`[${timestamp}] Error stack:`, error.stack);
+    console.error(`[${timestamp}] === END /authenticate-client-credentials request (ERROR) ===`);
+
+    return res.status(401).json({
+      error: 'Client credentials authentication failed',
+      message: error.message,
+      timestamp,
+      troubleshooting: 'Ensure the OIDC client (mcp-client) is configured to support client_credentials grant type in Fenergo'
+    });
+  }
+});
+
 // OIDC SSO Login endpoint - initiates user login flow
 app.post('/auth/login', async (req, res) => {
   const timestamp = new Date().toISOString();
@@ -702,12 +741,16 @@ const server = app.listen(PORT, () => {
   console.error(`[${timestamp}] Listening on port ${PORT}`);
   console.error(`[${timestamp}] Available endpoints:`);
   console.error(`[${timestamp}]   GET  http://localhost:${PORT}/health`);
-  console.error(`[${timestamp}]   POST http://localhost:${PORT}/authenticate (Client Credentials OAuth)`);
-  console.error(`[${timestamp}]   POST http://localhost:${PORT}/auth/login (SSO/OIDC Login)`);
-  console.error(`[${timestamp}]   GET  http://localhost:${PORT}/auth/callback (SSO/OIDC Callback)`);
-  console.error(`[${timestamp}]   POST http://localhost:${PORT}/execute (Fenergo API Proxy)`);
+  console.error(`[${timestamp}]   GET  http://localhost:${PORT}/diagnostic (Configuration info)`);
+  console.error(`[${timestamp}]   POST http://localhost:${PORT}/authenticate (Legacy OAuth Client Credentials)`);
+  console.error(`[${timestamp}]   POST http://localhost:${PORT}/authenticate-client-credentials (OIDC Client Credentials for Claude Desktop)`);
+  console.error(`[${timestamp}]   POST http://localhost:${PORT}/auth/login (SSO/OIDC Authorization Code Flow)`);
+  console.error(`[${timestamp}]   GET  http://localhost:${PORT}/signin-oidc (OIDC Callback Endpoint)`);
+  console.error(`[${timestamp}]   GET  http://localhost:${PORT}/auth/callback (Alternative OIDC Callback)`);
+  console.error(`[${timestamp}]   POST http://localhost:${PORT}/execute (Fenergo Insights API Proxy)`);
   console.error(`[${timestamp}] Fenergo API target: ${FENERGO_API_URL}`);
   console.error(`[${timestamp}] Configuration:`);
+  console.error(`[${timestamp}]   OIDC Client: ${FENERGO_OIDC_CLIENT_ID} (${FENERGO_OIDC_CLIENT_SECRET ? 'secret set' : 'no secret'})`);
   console.error(`[${timestamp}]   FENERGO_API_TOKEN: ${API_TOKEN ? 'SET' : 'MISSING'}`);
   console.error(`[${timestamp}]   FENERGO_TENANT_ID: ${TENANT_ID || 'MISSING'}`);
 });

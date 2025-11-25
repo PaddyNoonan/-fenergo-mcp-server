@@ -335,6 +335,123 @@ class FenergoOIDCAuth {
   clearCachedToken(cacheKey) {
     this.tokenCache.delete(cacheKey);
   }
+
+  /**
+   * Authenticate using Client Credentials flow (for service-to-service auth)
+   * This allows applications like Claude Desktop to authenticate without user interaction
+   * @returns {Promise<object>} Token response with access_token, expires_in, etc.
+   */
+  async authenticateClientCredentials() {
+    return new Promise((resolve, reject) => {
+      const timestamp = new Date().toISOString();
+
+      // Prepare token request body with client credentials grant
+      const postData = new URLSearchParams({
+        grant_type: 'client_credentials',
+        client_id: this.clientId,
+        client_secret: this.clientSecret,
+        scope: this.scopes.join(' ')
+      });
+
+      const url = new URL(`${this.authorityUrl}/connect/token`);
+      const postBody = postData.toString();
+
+      const headers = {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Length': Buffer.byteLength(postBody),
+        'Accept': 'application/json',
+        'User-Agent': 'Fenergo-OIDC-Client-Credentials/1.0'
+      };
+
+      const options = {
+        hostname: url.hostname,
+        port: url.port || 443,
+        path: url.pathname + url.search,
+        method: 'POST',
+        headers: headers,
+        timeout: 30000
+      };
+
+      console.error(`[${timestamp}] [OIDC-CC] ========== CLIENT CREDENTIALS TOKEN REQUEST START ==========`);
+      console.error(`[${timestamp}] [OIDC-CC] Authority URL: ${this.authorityUrl}`);
+      console.error(`[${timestamp}] [OIDC-CC] Client ID: ${this.clientId}`);
+      console.error(`[${timestamp}] [OIDC-CC] Grant Type: client_credentials`);
+      console.error(`[${timestamp}] [OIDC-CC] Scopes: ${this.scopes.join(', ')}`);
+      console.error(`[${timestamp}] [OIDC-CC] Target URL: ${this.authorityUrl}/connect/token`);
+
+      const req = https.request(options, (res) => {
+        let data = '';
+
+        res.on('data', chunk => {
+          data += chunk;
+        });
+
+        res.on('end', () => {
+          console.error(`[${timestamp}] [OIDC-CC] ========== CLIENT CREDENTIALS TOKEN RESPONSE ==========`);
+          console.error(`[${timestamp}] [OIDC-CC] Response Status Code: ${res.statusCode}`);
+          console.error(`[${timestamp}] [OIDC-CC] Response Headers:`, JSON.stringify(res.headers, null, 2));
+          console.error(`[${timestamp}] [OIDC-CC] Response Body: ${data}`);
+
+          if (res.statusCode < 200 || res.statusCode >= 300) {
+            console.error(`[${timestamp}] [OIDC-CC] ========== ERROR: CLIENT CREDENTIALS FAILED ==========`);
+            console.error(`[${timestamp}] [OIDC-CC] Status: ${res.statusCode}`);
+            console.error(`[${timestamp}] [OIDC-CC] Error Response:`, data);
+
+            try {
+              const errorData = JSON.parse(data);
+              console.error(`[${timestamp}] [OIDC-CC] Error Details:`, JSON.stringify(errorData, null, 2));
+            } catch (e) {
+              console.error(`[${timestamp}] [OIDC-CC] Could not parse error response as JSON`);
+            }
+
+            reject(new Error(`OIDC client credentials failed: ${res.statusCode} - ${data}`));
+            return;
+          }
+
+          try {
+            const parsed = JSON.parse(data);
+
+            if (!parsed.access_token) {
+              console.error(`[${timestamp}] [OIDC-CC] ERROR: No access_token in response`);
+              console.error(`[${timestamp}] [OIDC-CC] Response was:`, JSON.stringify(parsed, null, 2));
+              reject(new Error('OIDC client credentials response missing access_token'));
+              return;
+            }
+
+            console.error(`[${timestamp}] [OIDC-CC] ========== SUCCESS: TOKEN ACQUIRED ==========`);
+            console.error(`[${timestamp}] [OIDC-CC] Token expires in: ${parsed.expires_in}s`);
+            console.error(`[${timestamp}] [OIDC-CC] Scope: ${parsed.scope}`);
+
+            resolve({
+              accessToken: parsed.access_token,
+              tokenType: parsed.token_type || 'Bearer',
+              expiresIn: parsed.expires_in,
+              scope: parsed.scope,
+              acquiredAt: Date.now()
+            });
+          } catch (e) {
+            console.error(`[${timestamp}] [OIDC-CC] ERROR: Failed to parse token response:`, e.message);
+            console.error(`[${timestamp}] [OIDC-CC] Raw response was:`, data);
+            reject(e);
+          }
+        });
+      });
+
+      req.on('error', (err) => {
+        console.error(`[${timestamp}] [OIDC-CC] Request error:`, err.message);
+        reject(err);
+      });
+
+      req.on('timeout', () => {
+        console.error(`[${timestamp}] [OIDC-CC] Request timeout`);
+        req.destroy();
+        reject(new Error('OIDC client credentials request timeout'));
+      });
+
+      req.write(postBody);
+      req.end();
+    });
+  }
 }
 
 export default FenergoOIDCAuth;
