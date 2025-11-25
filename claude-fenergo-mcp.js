@@ -10,6 +10,7 @@ import {
   ListToolsRequestSchema
 } from '@modelcontextprotocol/sdk/types.js';
 import https from 'https';
+import FenergoOIDCAuth from './oidc-auth.js';
 
 class FenergoClaudeConnector {
   constructor() {
@@ -17,7 +18,22 @@ class FenergoClaudeConnector {
       console.error('Starting Fenergo Claude Connector...');
       this.config = this.loadSecureConfiguration();
       console.error('Configuration loaded successfully');
-      
+
+      // Initialize OAuth client for service-to-service authentication
+      this.oidcAuth = new FenergoOIDCAuth({
+        authorityUrl: 'https://identity.fenxstable.com',
+        clientId: 'mcp-client',
+        clientSecret: process.env.FENERGO_CLIENT_SECRET || 'd67105c0-52ca-164e-d0ea-b107cbbfdbc3',
+        scopes: ['openid', 'profile', 'fenx.all']
+      });
+      console.error('OAuth client initialized for Client Credentials flow');
+
+      // Token cache
+      this.tokenCache = {
+        accessToken: null,
+        expiresAt: null
+      };
+
       this.server = new Server(
         {
           name: 'fenergo-claude-connector',
@@ -50,35 +66,45 @@ class FenergoClaudeConnector {
 
   loadSecureConfiguration() {
     console.error('Loading configuration...');
-    const requiredEnvVars = ['FENERGO_API_TOKEN', 'FENERGO_TENANT_ID'];
+    const requiredEnvVars = ['FENERGO_TENANT_ID'];
     const missing = requiredEnvVars.filter(env => {
       const exists = !!process.env[env];
       console.error(`Environment variable ${env}: ${exists ? 'SET' : 'MISSING'}`);
       return !exists;
     });
-    
+
     if (missing.length > 0) {
       console.error(`Missing environment variables: ${missing.join(', ')}`);
       throw new Error(`Security Error: Missing required environment variables: ${missing.join(', ')}`);
     }
 
-    // Validate token format (should start with Bearer or be JWT)
-    const token = process.env.FENERGO_API_TOKEN;
-    console.error(`Token validation: length=${token ? token.length : 0}, starts with Bearer: ${token ? token.startsWith('Bearer ') : false}, contains dots: ${token ? token.includes('.') : false}`);
-    
-    if (!token.startsWith('Bearer ') && !token.includes('.')) {
-      console.error('Invalid token format detected');
-      throw new Error('Security Error: Invalid token format. Expected Bearer token or JWT.');
-    }
-
     return {
-      apiBaseUrl: process.env.FENERGO_API_BASE_URL || 
-        'https://api.fenxstable.com/documentmanagementquery/api/documentmanagement',
-      apiToken: token.startsWith('Bearer ') ? token : `Bearer ${token}`,
+      apiBaseUrl: process.env.FENERGO_API_BASE_URL ||
+        'https://api.fenxstable.com/documentmanagementquery/api',
       tenantId: process.env.FENERGO_TENANT_ID,
       timeout: parseInt(process.env.FENERGO_TIMEOUT || '30000', 10),
       retries: parseInt(process.env.FENERGO_RETRIES || '2', 10)
     };
+  }
+
+  async getOAuthToken() {
+    const now = Date.now();
+
+    // Return cached token if still valid (with 60 second buffer)
+    if (this.tokenCache.accessToken && this.tokenCache.expiresAt && this.tokenCache.expiresAt > now + 60000) {
+      console.error('Using cached OAuth token');
+      return this.tokenCache.accessToken;
+    }
+
+    console.error('Requesting new OAuth token via Client Credentials flow');
+    const tokenResponse = await this.oidcAuth.authenticateClientCredentials();
+
+    // Cache the token
+    this.tokenCache.accessToken = tokenResponse.accessToken;
+    this.tokenCache.expiresAt = now + (tokenResponse.expiresIn * 1000);
+
+    console.error(`OAuth token acquired, expires in ${tokenResponse.expiresIn}s`);
+    return tokenResponse.accessToken;
   }
 
   setupToolHandlers() {
@@ -216,12 +242,14 @@ class FenergoClaudeConnector {
 
   async handlePing() {
     const timestamp = new Date().toISOString();
-    
+
     try {
-      // Basic connectivity test without using API quota
+      // Test OAuth authentication
+      const token = await this.getOAuthToken();
+      const tokenValid = token && token.length > 0;
+
       const testUrl = new URL(this.config.apiBaseUrl);
-      const tokenValid = this.validateTokenFormat(this.config.apiToken);
-      
+
       const result = {
         success: true,
         server: 'fenergo-claude-connector',
@@ -230,12 +258,13 @@ class FenergoClaudeConnector {
         environment: process.env.NODE_ENV || 'development',
         apiEndpoint: testUrl.origin,
         tenantConfigured: !!this.config.tenantId,
-        tokenValidFormat: tokenValid,
+        oauthAuthenticated: tokenValid,
+        authMethod: 'OAuth2.0 Client Credentials',
         version: '1.0.0'
       };
-      
+
       await this.logSuccess('Ping successful');
-      
+
       return {
         content: [{
           type: 'text',
@@ -245,7 +274,7 @@ class FenergoClaudeConnector {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       await this.logError('Ping failed', error);
-      
+
       return {
         content: [{
           type: 'text',
@@ -258,50 +287,51 @@ class FenergoClaudeConnector {
 
   async handleTokenStatus() {
     try {
-      const token = this.config.apiToken.replace('Bearer ', '');
-      
-      // Basic JWT validation (decode without verification for expiry check)
-      if (token.includes('.')) {
-        const parts = token.split('.');
-        if (parts.length === 3) {
-          try {
-            const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString());
-            const exp = payload.exp * 1000; // Convert to milliseconds
-            const now = Date.now();
-            const isValid = exp > now;
-            const timeRemaining = Math.max(0, exp - now);
-            
-            const result = {
-              tokenValid: isValid,
-              expiresAt: new Date(exp).toLocaleString(),
-              timeRemainingMs: timeRemaining,
-              timeRemainingMinutes: Math.floor(timeRemaining / (1000 * 60)),
-              status: isValid ? '✅ Valid' : '❌ Expired'
-            };
-            
-            return {
-              content: [{
-                type: 'text',
-                text: `🔐 **Token Status**\n\n${JSON.stringify(result, null, 2)}`
-              }]
-            };
-          } catch (parseError) {
-            return {
-              content: [{
-                type: 'text',
-                text: '⚠️ **Token Status**: Unable to parse JWT token payload'
-              }]
-            };
-          }
+      const now = Date.now();
+      const cached = this.tokenCache.accessToken && this.tokenCache.expiresAt;
+
+      if (cached && this.tokenCache.expiresAt > now) {
+        const timeRemaining = this.tokenCache.expiresAt - now;
+        const result = {
+          tokenValid: true,
+          source: 'OAuth Client Credentials',
+          expiresAt: new Date(this.tokenCache.expiresAt).toLocaleString(),
+          timeRemainingMs: timeRemaining,
+          timeRemainingMinutes: Math.floor(timeRemaining / (1000 * 60)),
+          status: '✅ Valid (Cached)'
+        };
+
+        return {
+          content: [{
+            type: 'text',
+            text: `🔐 **OAuth Token Status**\n\n${JSON.stringify(result, null, 2)}`
+          }]
+        };
+      } else {
+        // Get a new token to verify it works
+        const token = await this.getOAuthToken();
+
+        if (token && this.tokenCache.expiresAt > now) {
+          const timeRemaining = this.tokenCache.expiresAt - now;
+          const result = {
+            tokenValid: true,
+            source: 'OAuth Client Credentials (Fresh)',
+            expiresAt: new Date(this.tokenCache.expiresAt).toLocaleString(),
+            timeRemainingMs: timeRemaining,
+            timeRemainingMinutes: Math.floor(timeRemaining / (1000 * 60)),
+            status: '✅ Valid'
+          };
+
+          return {
+            content: [{
+              type: 'text',
+              text: `🔐 **OAuth Token Status**\n\n${JSON.stringify(result, null, 2)}`
+            }]
+          };
         }
       }
-      
-      return {
-        content: [{
-          type: 'text',
-          text: '⚠️ **Token Status**: Token format not recognized as JWT'
-        }]
-      };
+
+      throw new Error('Unable to obtain valid OAuth token');
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       return {
@@ -319,6 +349,9 @@ class FenergoClaudeConnector {
   }
 
   async makeSecureApiRequest(apiUrl, method, payload) {
+    // Get fresh or cached OAuth token
+    const token = await this.getOAuthToken();
+
     return new Promise((resolve, reject) => {
       const parsedUrl = new URL(apiUrl);
       const postData = payload ? JSON.stringify(payload) : undefined;
@@ -329,7 +362,7 @@ class FenergoClaudeConnector {
         path: parsedUrl.pathname + parsedUrl.search,
         method,
         headers: {
-          'Authorization': this.config.apiToken,
+          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
           'X-Tenant-Id': this.config.tenantId,
           'Accept': 'application/json',
