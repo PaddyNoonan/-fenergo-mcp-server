@@ -10,7 +10,6 @@ import {
   ListToolsRequestSchema
 } from '@modelcontextprotocol/sdk/types.js';
 import https from 'https';
-import FenergoOIDCAuth from './oidc-auth.js';
 
 class FenergoClaudeConnector {
   constructor() {
@@ -19,16 +18,7 @@ class FenergoClaudeConnector {
       this.config = this.loadSecureConfiguration();
       console.error('Configuration loaded successfully');
 
-      // Initialize OAuth client for service-to-service authentication
-      this.oidcAuth = new FenergoOIDCAuth({
-        authorityUrl: 'https://identity.fenxstable.com',
-        clientId: 'mcp-client',
-        clientSecret: process.env.FENERGO_CLIENT_SECRET || 'd67105c0-52ca-164e-d0ea-b107cbbfdbc3',
-        scopes: ['openid', 'profile', 'fenx.all']
-      });
-      console.error('OAuth client initialized for Client Credentials flow');
-
-      // Token cache
+      // Token cache for SSO authentication
       this.tokenCache = {
         accessToken: null,
         expiresAt: null
@@ -36,9 +26,9 @@ class FenergoClaudeConnector {
 
       this.server = new Server(
         {
-          name: 'fenergo-claude-connector',
+          name: 'Fenergo Insights Connector',
           version: '1.0.0',
-          description: 'Enterprise Fenergo Nebula API connector for Claude Desktop with OAuth2.0 security'
+          description: 'Enterprise Fenergo Nebula API connector for Claude Desktop with dynamic OIDC SSO authentication'
         },
         {
           capabilities: {
@@ -82,30 +72,109 @@ class FenergoClaudeConnector {
       apiBaseUrl: process.env.FENERGO_API_BASE_URL ||
         'https://api.fenxstable.com/documentmanagementquery/api',
       tenantId: process.env.FENERGO_TENANT_ID,
+      appRunnerUrl: process.env.APPRUNNER_URL ||
+        'https://tc8srxrkcp.eu-west-1.awsapprunner.com',
       timeout: parseInt(process.env.FENERGO_TIMEOUT || '30000', 10),
       retries: parseInt(process.env.FENERGO_RETRIES || '2', 10)
     };
   }
 
-  async getOAuthToken() {
+  async attemptSSO() {
+    return new Promise((resolve, reject) => {
+      const requestBody = JSON.stringify({ tenantId: this.config.tenantId });
+      const parsedUrl = new URL(`${this.config.appRunnerUrl}/auth/login`);
+
+      const options = {
+        hostname: parsedUrl.hostname,
+        port: parsedUrl.port || 443,
+        path: parsedUrl.pathname,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(requestBody)
+        }
+      };
+
+      const req = https.request(options, (res) => {
+        let data = '';
+        res.on('data', (chunk) => data += chunk);
+        res.on('end', () => {
+          try {
+            const response = JSON.parse(data);
+
+            if (response.accessToken) {
+              const now = Date.now();
+              this.tokenCache.accessToken = response.accessToken;
+              this.tokenCache.expiresAt = now + ((response.expiresIn || 3600) * 1000);
+              resolve({ token: response.accessToken, expiresIn: response.expiresIn || 3600 });
+            } else if (response.authorizationUrl) {
+              resolve({ authorizationUrl: response.authorizationUrl });
+            } else {
+              reject(new Error('Unexpected response from AppRunner'));
+            }
+          } catch (error) {
+            reject(error);
+          }
+        });
+      });
+
+      req.on('error', reject);
+      req.write(requestBody);
+      req.end();
+    });
+  }
+
+  async getSSOToken() {
     const now = Date.now();
 
     // Return cached token if still valid (with 60 second buffer)
     if (this.tokenCache.accessToken && this.tokenCache.expiresAt && this.tokenCache.expiresAt > now + 60000) {
-      console.error('Using cached OAuth token');
+      console.error('Using cached SSO token');
       return this.tokenCache.accessToken;
     }
 
-    console.error('Requesting new OAuth token via Client Credentials flow');
-    const tokenResponse = await this.oidcAuth.authenticateClientCredentials();
+    // Check if token is provided via environment variable
+    if (process.env.FENERGO_SSO_TOKEN) {
+      console.error('Using SSO token from environment variable');
+      const token = process.env.FENERGO_SSO_TOKEN;
 
-    // Cache the token
-    this.tokenCache.accessToken = tokenResponse.accessToken;
-    this.tokenCache.expiresAt = now + (tokenResponse.expiresIn * 1000);
+      // Attempt to cache it with expiration info
+      try {
+        const parts = token.split('.');
+        if (parts.length === 3) {
+          const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8'));
+          if (payload.exp) {
+            const expiresAt = payload.exp * 1000;
+            this.tokenCache.accessToken = token;
+            this.tokenCache.expiresAt = expiresAt;
+            console.error(`Token cached, expires at ${new Date(expiresAt).toISOString()}`);
+          }
+        }
+      } catch (e) {
+        console.error('Warning: Could not parse token expiration from JWT');
+      }
 
-    console.error(`OAuth token acquired, expires in ${tokenResponse.expiresIn}s`);
-    return tokenResponse.accessToken;
+      return token;
+    }
+
+    // Use attemptSSO to get either a token or authorization URL
+    const result = await this.attemptSSO();
+
+    if (result.token) {
+      console.error(`SSO token acquired from AppRunner, expires in ${result.expiresIn}s`);
+      return result.token;
+    }
+
+    if (result.authorizationUrl) {
+      throw new Error(
+        `No SSO token available. Please authenticate first by calling the 'authenticate' tool in Claude Desktop. ` +
+        `That will provide you with the authentication URL to complete SSO login.`
+      );
+    }
+
+    throw new Error('Unexpected response from SSO flow');
   }
+
 
   setupToolHandlers() {
     // List available tools
@@ -113,7 +182,7 @@ class FenergoClaudeConnector {
       return {
         tools: [
           {
-            name: 'fenergo_insights_agent_docstask',
+            name: 'investigate_journey',
             description: 'Investigate journeys in Fenergo Nebula for compliance, risk assessment, and document management. Choose between Documents or Requirements scope and ask your question naturally.',
             inputSchema: {
               type: 'object',
@@ -148,6 +217,15 @@ class FenergoClaudeConnector {
               properties: {},
               additionalProperties: false
             }
+          },
+          {
+            name: 'authenticate',
+            description: 'Authenticate with Fenergo via SSO to obtain an access token for API calls',
+            inputSchema: {
+              type: 'object',
+              properties: {},
+              additionalProperties: false
+            }
           }
         ]
       };
@@ -161,12 +239,14 @@ class FenergoClaudeConnector {
         this.logToolExecution(name, args);
 
         switch (name) {
-          case 'fenergo_insights_agent_docstask':
+          case 'investigate_journey':
             return await this.handleJourneyInvestigation(args);
           case 'fenergo_ping':
             return await this.handlePing();
           case 'fenergo_token_status':
             return await this.handleTokenStatus();
+          case 'authenticate':
+            return await this.handleAuthenticate();
           default:
             throw new Error(`Unknown tool: ${name}`);
         }
@@ -240,26 +320,95 @@ class FenergoClaudeConnector {
     }
   }
 
+  async handleAuthenticate() {
+    console.error('Attempting SSO authentication');
+
+    try {
+      const result = await this.attemptSSO();
+
+      // If result contains a token, we're authenticated!
+      if (result.token) {
+        console.error('SSO authentication successful - token acquired');
+        await this.logSuccess('SSO authentication successful');
+
+        return {
+          content: [{
+            type: 'text',
+            text: `✅ **SSO Authentication Successful!**
+
+You are now authenticated with Fenergo for tenant \`${this.config.tenantId}\`.
+
+**Token Details:**
+- Status: Valid and cached
+- Expires In: ${result.expiresIn || 3600} seconds
+- Scopes: openid, profile, fenx.all
+
+You can now use me to investigate journeys and query documents. Just ask me anything about your Fenergo data!`
+          }]
+        };
+      }
+
+      // If result contains authorizationUrl, show it to user
+      if (result.authorizationUrl) {
+        console.error('SSO authentication flow initiated - showing auth URL to user');
+        return {
+          content: [{
+            type: 'text',
+            text: `🔐 **Fenergo SSO Authentication - Step 1 of 2**
+
+I've initiated the SSO authentication flow. Here's what to do:
+
+**Step 1: Click this link to log in with your Fenergo credentials:**
+${result.authorizationUrl}
+
+**Step 2: After you authenticate in your browser:**
+1. You'll see a confirmation page
+2. Come back and call "authenticate" again
+3. I'll retrieve your cached token automatically
+4. You'll then have full access to query all Fenergo journeys and documents`
+          }]
+        };
+      }
+
+      throw new Error('Unexpected response from authentication flow');
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      await this.logError('SSO authentication failed', error);
+
+      return {
+        content: [{
+          type: 'text',
+          text: `❌ **SSO Authentication Failed**
+
+Error: ${errorMessage}
+
+Time: ${new Date().toISOString()}`
+        }],
+        isError: true
+      };
+    }
+  }
+
   async handlePing() {
     const timestamp = new Date().toISOString();
 
     try {
-      // Test OAuth authentication
-      const token = await this.getOAuthToken();
+      // Test SSO authentication
+      const token = await this.getSSOToken();
       const tokenValid = token && token.length > 0;
 
       const testUrl = new URL(this.config.apiBaseUrl);
 
       const result = {
         success: true,
-        server: 'fenergo-claude-connector',
-        message: '🟢 Pong! Fenergo Claude Connector is operational',
+        server: 'Fenergo Insights Connector',
+        message: '🟢 Pong! Fenergo Insights Connector is operational',
         timestamp,
         environment: process.env.NODE_ENV || 'development',
         apiEndpoint: testUrl.origin,
         tenantConfigured: !!this.config.tenantId,
-        oauthAuthenticated: tokenValid,
-        authMethod: 'OAuth2.0 Client Credentials',
+        ssoAuthenticated: tokenValid,
+        authMethod: 'OIDC SSO',
         version: '1.0.0'
       };
 
@@ -294,44 +443,27 @@ class FenergoClaudeConnector {
         const timeRemaining = this.tokenCache.expiresAt - now;
         const result = {
           tokenValid: true,
-          source: 'OAuth Client Credentials',
+          source: 'SSO (Cached)',
           expiresAt: new Date(this.tokenCache.expiresAt).toLocaleString(),
           timeRemainingMs: timeRemaining,
           timeRemainingMinutes: Math.floor(timeRemaining / (1000 * 60)),
-          status: '✅ Valid (Cached)'
+          status: '✅ Valid'
         };
 
         return {
           content: [{
             type: 'text',
-            text: `🔐 **OAuth Token Status**\n\n${JSON.stringify(result, null, 2)}`
+            text: `🔐 **SSO Token Status**\n\n${JSON.stringify(result, null, 2)}`
           }]
         };
       } else {
-        // Get a new token to verify it works
-        const token = await this.getOAuthToken();
-
-        if (token && this.tokenCache.expiresAt > now) {
-          const timeRemaining = this.tokenCache.expiresAt - now;
-          const result = {
-            tokenValid: true,
-            source: 'OAuth Client Credentials (Fresh)',
-            expiresAt: new Date(this.tokenCache.expiresAt).toLocaleString(),
-            timeRemainingMs: timeRemaining,
-            timeRemainingMinutes: Math.floor(timeRemaining / (1000 * 60)),
-            status: '✅ Valid'
-          };
-
-          return {
-            content: [{
-              type: 'text',
-              text: `🔐 **OAuth Token Status**\n\n${JSON.stringify(result, null, 2)}`
-            }]
-          };
-        }
+        return {
+          content: [{
+            type: 'text',
+            text: `⚠️ **No Active SSO Token**\n\nPlease authenticate first using the 'authenticate' tool.`
+          }]
+        };
       }
-
-      throw new Error('Unable to obtain valid OAuth token');
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       return {
@@ -349,8 +481,8 @@ class FenergoClaudeConnector {
   }
 
   async makeSecureApiRequest(apiUrl, method, payload) {
-    // Get fresh or cached OAuth token
-    const token = await this.getOAuthToken();
+    // Get fresh or cached SSO token
+    const token = await this.getSSOToken();
 
     return new Promise((resolve, reject) => {
       const parsedUrl = new URL(apiUrl);
