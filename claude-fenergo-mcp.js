@@ -287,34 +287,40 @@ class FenergoClaudeConnector {
 
     const journeyId = journeyIdMatch[0];
 
-    // Build JSON-RPC 2.0 payload for /execute
+    // Build request payload for AppRunner /execute endpoint
     const payload = {
-      jsonrpc: "2.0",
-      id: 1,
-      method: "tools/call",
-      params: {
-        tool: "investigate_journey",
-        parameters: {
-          journeyId,
-          query: query.trim(),
-          scope
-        }
+      data: {
+        message: query.trim(),
+        scope: {
+          documentContext: {
+            contextLevel: "Journey",
+            contextId: journeyId
+          },
+          documentRequirementContext: scope === "requirements" ? {
+            contextLevel: "Journey",
+            contextId: journeyId
+          } : null
+        },
+        conversationHistory: []
       }
     };
 
-    const apiUrl = `${this.config.apiBaseUrl}/insights`;
-    const response = await this.makeSecureApiRequest(apiUrl, 'POST', payload);
+    // Route through AppRunner backend which has the authenticated token
+    const apiUrl = `${this.config.appRunnerUrl}/execute`;
+    const response = await this.makeAppRunnerRequest(apiUrl, 'POST', payload);
 
-    if (response.statusCode === 200 && response.data?.result) {
-      // Optionally format the result if needed
+    if (response.statusCode === 200 && response.data?.data?.response) {
+      // Format the AI response from the insights endpoint
       return {
         content: [{
           type: 'text',
-          text: JSON.stringify(response.data.result, null, 2)
+          text: response.data.data.response
         }]
       };
     } else if (response.statusCode === 401) {
-      throw new Error('Authentication failed: Token may be expired or invalid. Please refresh your Fenergo API token.');
+      throw new Error('Authentication failed: Token may be expired or invalid. Please authenticate using the "authenticate" tool.');
+    } else if (response.statusCode === 403) {
+      throw new Error('Authorization failed: Your token does not have permission to access this resource. This may require administrator approval.');
     } else {
       throw new Error(`API request failed with status ${response.statusCode}: ${JSON.stringify(response.data)}`);
     }
@@ -478,6 +484,63 @@ Time: ${new Date().toISOString()}`
 
   validateTokenFormat(token) {
     return token.startsWith('Bearer ') && (token.includes('.') || token.length > 50);
+  }
+
+  async makeAppRunnerRequest(apiUrl, method, payload) {
+    // Make request to AppRunner backend (no token needed - AppRunner handles auth)
+    return new Promise((resolve, reject) => {
+      const parsedUrl = new URL(apiUrl);
+      const postData = payload ? JSON.stringify(payload) : undefined;
+
+      const options = {
+        hostname: parsedUrl.hostname,
+        port: parsedUrl.port || 443,
+        path: parsedUrl.pathname + parsedUrl.search,
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Tenant-Id': this.config.tenantId,
+          'Accept': 'application/json',
+          'User-Agent': 'Fenergo-Claude-Connector/1.0.0',
+          ...(postData && { 'Content-Length': Buffer.byteLength(postData) })
+        },
+        timeout: this.config.timeout,
+        secureProtocol: 'TLSv1_2_method',
+        rejectUnauthorized: true
+      };
+
+      const req = https.request(options, (res) => {
+        let data = '';
+        res.on('data', (chunk) => data += chunk);
+        res.on('end', () => {
+          try {
+            const jsonData = JSON.parse(data);
+            resolve({
+              statusCode: res.statusCode || 0,
+              data: jsonData,
+              headers: res.headers
+            });
+          } catch (parseError) {
+            resolve({
+              statusCode: res.statusCode || 0,
+              data: { message: data },
+              headers: res.headers
+            });
+          }
+        });
+      });
+
+      req.on('error', reject);
+      req.on('timeout', () => {
+        req.destroy();
+        reject(new Error(`Request timeout after ${this.config.timeout}ms`));
+      });
+
+      if (postData) {
+        req.write(postData);
+      }
+      req.end();
+    });
   }
 
   async makeSecureApiRequest(apiUrl, method, payload) {

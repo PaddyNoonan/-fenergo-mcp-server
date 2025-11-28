@@ -415,6 +415,14 @@ app.all('/signin-oidc', async (req, res) => {
     oidcAuth.cacheToken(cacheKey, tokenResponse);
     console.error(`[${timestamp}] Token cached with key: ${cacheKey}`);
 
+    // Also store tenant → token mapping for easy lookup in /execute
+    sessionStore.set(`tenant_${tenantId}`, {
+      accessToken: tokenResponse.accessToken,
+      expiresAt: Date.now() + (tokenResponse.expiresIn * 1000),
+      timestamp: Date.now()
+    });
+    console.error(`[${timestamp}] Tenant token mapping stored for tenant: ${tenantId}`);
+
     console.error(`[${timestamp}] === END /signin-oidc request (SUCCESS) ===`);
 
     // Return token response
@@ -519,6 +527,14 @@ app.all('/auth/callback', async (req, res) => {
     const cacheKey = `user_${tenantId}_${Date.now()}`;
     oidcAuth.cacheToken(cacheKey, tokenResponse);
     console.error(`[${timestamp}] Token cached with key: ${cacheKey}`);
+
+    // Also store tenant → token mapping for easy lookup in /execute
+    sessionStore.set(`tenant_${tenantId}`, {
+      accessToken: tokenResponse.accessToken,
+      expiresAt: Date.now() + (tokenResponse.expiresIn * 1000),
+      timestamp: Date.now()
+    });
+    console.error(`[${timestamp}] Tenant token mapping stored for tenant: ${tenantId}`);
 
     console.error(`[${timestamp}] === END /auth/callback request (SUCCESS) ===`);
 
@@ -662,17 +678,36 @@ app.post('/execute', async (req, res) => {
     console.error(`[${timestamp}] Request body:`, JSON.stringify(req.body, null, 2));
     console.error(`[${timestamp}] Request headers:`, JSON.stringify(req.headers, null, 2));
 
-    // Extract Authorization header from incoming request (OAuth token from MCP connector)
-    const authHeader = req.headers.authorization;
+    // Try to get authentication token from multiple sources
+    let authHeader = req.headers.authorization;
+    const tenantId = req.headers['x-tenant-id'] || TENANT_ID;
+
     console.error(`[${timestamp}] Authorization header present: ${!!authHeader}`);
+    console.error(`[${timestamp}] Tenant ID: ${tenantId}`);
+
+    // If no auth header, try to retrieve cached SSO token for this tenant
+    if (!authHeader && tenantId) {
+      const tenantKey = `tenant_${tenantId}`;
+      const cachedToken = sessionStore.get(tenantKey);
+
+      if (cachedToken && cachedToken.expiresAt > Date.now()) {
+        authHeader = `Bearer ${cachedToken.accessToken}`;
+        console.error(`[${timestamp}] Using cached SSO token for tenant ${tenantId}`);
+      } else if (cachedToken) {
+        console.error(`[${timestamp}] Cached token found but expired (expired at ${new Date(cachedToken.expiresAt).toISOString()})`);
+      } else {
+        console.error(`[${timestamp}] No cached token found for tenant ${tenantId}`);
+      }
+    }
+
     if (authHeader) {
-      console.error(`[${timestamp}] Will use OAuth token from Authorization header`);
+      console.error(`[${timestamp}] Will use OAuth token for API call`);
     } else if (API_TOKEN) {
-      console.error(`[${timestamp}] No Authorization header, will use fallback API_TOKEN from environment`);
+      console.error(`[${timestamp}] No Authorization header or cached token, will use fallback API_TOKEN from environment`);
     } else {
       console.error(`[${timestamp}] ERROR: No authentication available`);
       return res.status(401).json({
-        error: 'Unauthorized: No authentication token provided'
+        error: 'Unauthorized: No authentication token provided. Please authenticate first using SSO.'
       });
     }
 
