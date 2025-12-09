@@ -280,18 +280,29 @@ class FenergoClaudeConnector {
       try {
         const authResult = await this.attemptSSO();
         if (authResult && authResult.authorizationUrl) {
-          // Return auth URL to user
+          // Return auth URL to user - format prominently so Claude AI includes it
+          const authUrl = authResult.authorizationUrl;
           return {
             content: [{
               type: 'text',
-              text: `🔐 **Authentication Required**
+              text: `🔐 AUTHENTICATION REQUIRED 🔐
 
-Before I can investigate journey documents, you need to authenticate with Fenergo.
+You need to authenticate before accessing Fenergo documents.
 
-**Please click this link to log in:**
-${authResult.authorizationUrl}
+══════════════════════════════════════════════
+CLICK THIS URL TO AUTHENTICATE:
 
-After you complete authentication in your browser, ask your question again and I'll be able to help you.`
+${authUrl}
+══════════════════════════════════════════════
+
+Instructions:
+1. Click the URL above (or copy and paste it into your browser)
+2. Log in with your Fenergo credentials
+3. Return here and ask your question again
+
+Your tenant ID: ${this.config.tenantId}
+
+Note: After authentication, your token will be cached for 1 hour.`
             }]
           };
         }
