@@ -705,8 +705,25 @@ Time: ${new Date().toISOString()}`
     try {
       const transport = new StdioServerTransport();
       await this.server.connect(transport);
-      
+
       await this.logSuccess('Fenergo Claude Connector ready for Claude Desktop integration');
+
+      // Automatically attempt SSO authentication on startup
+      console.error(`Attempting automatic SSO authentication for tenant ${this.config.tenantId}...`);
+      try {
+        const authResult = await this.attemptSSO();
+        if (authResult && authResult.token) {
+          // Token received immediately (e.g., from cache)
+          await this.logSuccess(`Authenticated successfully for tenant ${this.config.tenantId}`);
+        } else if (authResult && authResult.authorizationUrl) {
+          // Browser-based SSO required - notify user
+          await this.logSuccess(`Authentication required. Please open this URL in your browser to authenticate:\n${authResult.authorizationUrl}`);
+        }
+      } catch (authError) {
+        // Don't fail server startup if auth fails - user can manually authenticate later
+        console.error(`Auto-authentication could not complete: ${authError.message}`);
+        console.error('You can manually authenticate using the "authenticate" tool when needed.');
+      }
     } catch (error) {
       await this.logError('Failed to start server', error);
       throw error;
