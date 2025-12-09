@@ -268,6 +268,38 @@ class FenergoClaudeConnector {
   async handleJourneyInvestigation(request) {
     const { query, scope } = request;
 
+    // Check if we have a valid cached token before proceeding
+    const now = Date.now();
+    const needsAuth = !this.tokenCache.accessToken ||
+                     !this.tokenCache.expiresAt ||
+                     this.tokenCache.expiresAt <= now + 60000;
+
+    if (needsAuth) {
+      // Need to authenticate first - trigger SSO flow
+      console.error('No valid token found, triggering authentication...');
+      try {
+        const authResult = await this.attemptSSO();
+        if (authResult && authResult.authorizationUrl) {
+          // Return auth URL to user
+          return {
+            content: [{
+              type: 'text',
+              text: `🔐 **Authentication Required**
+
+Before I can investigate journey documents, you need to authenticate with Fenergo.
+
+**Please click this link to log in:**
+${authResult.authorizationUrl}
+
+After you complete authentication in your browser, ask your question again and I'll be able to help you.`
+            }]
+          };
+        }
+      } catch (authError) {
+        console.error('Authentication trigger failed:', authError);
+      }
+    }
+
     // Validate required fields
     if (!query || query.trim().length === 0) {
       throw new Error('Investigation query is required. Please provide your question about a journey.');
@@ -280,7 +312,7 @@ class FenergoClaudeConnector {
     // Extract journey ID (GUID) from the free-form text
     const guidRegex = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
     const journeyIdMatch = query.match(guidRegex);
-    
+
     if (!journeyIdMatch) {
       throw new Error('No valid journey ID found in your query. Please include a journey ID (GUID format) in your message. Example: "What is the status of journey b44f1862-cc32-4296-898d-c92a881c7fff?"');
     }
@@ -707,23 +739,8 @@ Time: ${new Date().toISOString()}`
       await this.server.connect(transport);
 
       await this.logSuccess('Fenergo Claude Connector ready for Claude Desktop integration');
-
-      // Automatically attempt SSO authentication on startup
-      console.error(`Attempting automatic SSO authentication for tenant ${this.config.tenantId}...`);
-      try {
-        const authResult = await this.attemptSSO();
-        if (authResult && authResult.token) {
-          // Token received immediately (e.g., from cache)
-          await this.logSuccess(`Authenticated successfully for tenant ${this.config.tenantId}`);
-        } else if (authResult && authResult.authorizationUrl) {
-          // Browser-based SSO required - notify user
-          await this.logSuccess(`Authentication required. Please open this URL in your browser to authenticate:\n${authResult.authorizationUrl}`);
-        }
-      } catch (authError) {
-        // Don't fail server startup if auth fails - user can manually authenticate later
-        console.error(`Auto-authentication could not complete: ${authError.message}`);
-        console.error('You can manually authenticate using the "authenticate" tool when needed.');
-      }
+      console.error(`Ready to serve requests for tenant ${this.config.tenantId}`);
+      console.error('Authentication will be triggered automatically on first query');
     } catch (error) {
       await this.logError('Failed to start server', error);
       throw error;
