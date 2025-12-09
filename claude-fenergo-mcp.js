@@ -268,49 +268,6 @@ class FenergoClaudeConnector {
   async handleJourneyInvestigation(request) {
     const { query, scope } = request;
 
-    // Check if we have a valid cached token before proceeding
-    const now = Date.now();
-    const needsAuth = !this.tokenCache.accessToken ||
-                     !this.tokenCache.expiresAt ||
-                     this.tokenCache.expiresAt <= now + 60000;
-
-    if (needsAuth) {
-      // Need to authenticate first - trigger SSO flow
-      console.error('No valid token found, triggering authentication...');
-      try {
-        const authResult = await this.attemptSSO();
-        if (authResult && authResult.authorizationUrl) {
-          // Return auth URL to user - format prominently so Claude AI includes it
-          const authUrl = authResult.authorizationUrl;
-          return {
-            content: [{
-              type: 'text',
-              text: `🔐 AUTHENTICATION REQUIRED 🔐
-
-You need to authenticate before accessing Fenergo documents.
-
-══════════════════════════════════════════════
-CLICK THIS URL TO AUTHENTICATE:
-
-${authUrl}
-══════════════════════════════════════════════
-
-Instructions:
-1. Click the URL above (or copy and paste it into your browser)
-2. Log in with your Fenergo credentials
-3. Return here and ask your question again
-
-Your tenant ID: ${this.config.tenantId}
-
-Note: After authentication, your token will be cached for 1 hour.`
-            }]
-          };
-        }
-      } catch (authError) {
-        console.error('Authentication trigger failed:', authError);
-      }
-    }
-
     // Validate required fields
     if (!query || query.trim().length === 0) {
       throw new Error('Investigation query is required. Please provide your question about a journey.');
@@ -361,7 +318,35 @@ Note: After authentication, your token will be cached for 1 hour.`
         }]
       };
     } else if (response.statusCode === 401) {
-      throw new Error('Authentication failed: Token may be expired or invalid. Please authenticate using the "authenticate" tool.');
+      // Authentication required - trigger SSO flow and show URL
+      console.error('API returned 401 - triggering authentication...');
+      try {
+        const authResult = await this.attemptSSO();
+        if (authResult && authResult.authorizationUrl) {
+          const authUrl = authResult.authorizationUrl;
+          throw new Error(`🔐 AUTHENTICATION REQUIRED
+
+To access Fenergo journey documents, you need to authenticate.
+
+══════════════════════════════════════════════
+CLICK THIS URL TO AUTHENTICATE:
+
+${authUrl}
+══════════════════════════════════════════════
+
+Instructions:
+1. Click the URL above to log in
+2. After authentication, ask your question again
+
+Tenant: ${this.config.tenantId}`);
+        }
+      } catch (authError) {
+        // If auth trigger fails, show generic error
+        if (authError.message.includes('AUTHENTICATION REQUIRED')) {
+          throw authError; // Re-throw the formatted auth message
+        }
+      }
+      throw new Error('Authentication failed: Token may be expired or invalid. Please authenticate.');
     } else if (response.statusCode === 403) {
       throw new Error('Authorization failed: Your token does not have permission to access this resource. This may require administrator approval.');
     } else {
