@@ -385,21 +385,31 @@ You can now use me to investigate journeys and query documents. Just ask me anyt
       // If result contains authorizationUrl, show it to user
       if (result.authorizationUrl) {
         console.error('SSO authentication flow initiated - showing auth URL to user');
+        const url = result.authorizationUrl;
         return {
           content: [{
             type: 'text',
-            text: `🔐 **Fenergo SSO Authentication - Step 1 of 2**
+            text: `🔐 FENERGO SSO AUTHENTICATION REQUIRED 🔐
 
-I've initiated the SSO authentication flow. Here's what to do:
+════════════════════════════════════════════════════════════════
+                    AUTHENTICATION URL
+════════════════════════════════════════════════════════════════
 
-**Step 1: Click this link to log in with your Fenergo credentials:**
-${result.authorizationUrl}
+${url}
 
-**Step 2: After you authenticate in your browser:**
-1. You'll see a confirmation page
-2. Come back and call "authenticate" again
-3. I'll retrieve your cached token automatically
-4. You'll then have full access to query all Fenergo journeys and documents`
+════════════════════════════════════════════════════════════════
+
+CRITICAL: You MUST click or copy the URL above to authenticate.
+
+After clicking the URL:
+1. Log in with your Fenergo credentials in the browser
+2. You will see a success confirmation page
+3. Return to Claude Desktop and ask your question again
+
+DO NOT paraphrase this message - the user needs to see the actual URL.
+
+Tenant: ${this.config.tenantId}
+Token expires: 1 hour after authentication`
           }]
         };
       }
