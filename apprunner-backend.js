@@ -229,6 +229,49 @@ app.get('/openapi.json', (_req, res) => {
   res.json(openApiSchema);
 });
 
+// ChatGPT Connector Manifest endpoint
+app.get('/.well-known/ai-plugin.json', (_req, res) => {
+  const timestamp = new Date().toISOString();
+  console.error(`[${timestamp}] ChatGPT connector manifest request`);
+
+  const manifest = {
+    "schema_version": "v1",
+    "name_for_model": "fenergo_journey_insights",
+    "name_for_human": "Fenergo Journey Insights",
+    "description_for_model": "Query Fenergo Nebula document management system for customer journey information. Use this when users ask about documents, requirements, or compliance for specific journeys. Always extract the journey ID (GUID format) from user queries before calling.",
+    "description_for_human": "Query documents and requirements for Fenergo customer journeys",
+    "auth": {
+      "type": "none"
+    },
+    "api": {
+      "type": "openapi",
+      "url": "https://tc8srxrkcp.eu-west-1.awsapprunner.com/openapi.json"
+    },
+    "logo_url": "https://tc8srxrkcp.eu-west-1.awsapprunner.com/logo.png",
+    "contact_email": "support@fenergo.com",
+    "legal_info_url": "https://fenergo.com/legal"
+  };
+
+  res.json(manifest);
+});
+
+// Logo endpoint for ChatGPT connector
+app.get('/logo.png', (_req, res) => {
+  const timestamp = new Date().toISOString();
+  console.error(`[${timestamp}] Logo request for ChatGPT connector`);
+
+  // Return a simple 1x1 transparent PNG as placeholder
+  // In production, replace this with actual Fenergo logo
+  const transparentPNG = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+    'base64'
+  );
+
+  res.set('Content-Type', 'image/png');
+  res.set('Cache-Control', 'public, max-age=86400'); // Cache for 24 hours
+  res.send(transparentPNG);
+});
+
 // OAuth Authentication endpoint
 app.post('/authenticate', async (req, res) => {
   const timestamp = new Date().toISOString();
