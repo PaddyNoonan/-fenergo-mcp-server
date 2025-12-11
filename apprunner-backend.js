@@ -132,6 +132,103 @@ app.get('/diagnostic', (req, res) => {
   });
 });
 
+// OpenAPI schema endpoint - for ChatGPT Actions and API documentation
+app.get('/openapi.json', (_req, res) => {
+  const timestamp = new Date().toISOString();
+  console.error(`[${timestamp}] OpenAPI schema request`);
+
+  const openApiSchema = {
+    "openapi": "3.1.0",
+    "info": {
+      "title": "Fenergo Journey Insights API",
+      "description": "Query Fenergo Nebula document management insights for customer journeys. This API allows you to ask natural language questions about documents and requirements associated with specific customer journeys.",
+      "version": "1.0.0"
+    },
+    "servers": [
+      {
+        "url": "https://tc8srxrkcp.eu-west-1.awsapprunner.com",
+        "description": "Production AppRunner endpoint"
+      }
+    ],
+    "paths": {
+      "/execute": {
+        "post": {
+          "operationId": "queryJourneyInsights",
+          "summary": "Query journey documents and requirements",
+          "description": "Ask natural language questions about documents or requirements for a specific Fenergo customer journey. Provide a journey ID (GUID) and your question.",
+          "requestBody": {
+            "required": true,
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data"],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "required": ["message", "scope"],
+                      "properties": {
+                        "message": {
+                          "type": "string",
+                          "description": "Your natural language question about the journey"
+                        },
+                        "scope": {
+                          "type": "object",
+                          "required": ["documentContext"],
+                          "properties": {
+                            "documentContext": {
+                              "type": "object",
+                              "required": ["contextLevel", "contextId"],
+                              "properties": {
+                                "contextLevel": { "type": "string", "enum": ["Journey"] },
+                                "contextId": { "type": "string", "format": "uuid" }
+                              }
+                            }
+                          }
+                        },
+                        "conversationHistory": {
+                          "type": "array",
+                          "items": { "type": "object" },
+                          "default": []
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "responses": {
+            "200": {
+              "description": "Successful response with AI-generated insights",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "object",
+                    "properties": {
+                      "data": {
+                        "type": "object",
+                        "properties": {
+                          "response": { "type": "string" }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "401": {
+              "description": "Authentication required"
+            }
+          }
+        }
+      }
+    }
+  };
+
+  res.json(openApiSchema);
+});
+
 // OAuth Authentication endpoint
 app.post('/authenticate', async (req, res) => {
   const timestamp = new Date().toISOString();

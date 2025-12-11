@@ -1,0 +1,205 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Fenergo Journey Insights API",
+    "description": "Query Fenergo Nebula document management insights for customer journeys. This API allows you to ask natural language questions about documents and requirements associated with specific customer journeys.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://tc8srxrkcp.eu-west-1.awsapprunner.com",
+      "description": "Production AppRunner endpoint"
+    }
+  ],
+  "paths": {
+    "/execute": {
+      "post": {
+        "operationId": "queryJourneyInsights",
+        "summary": "Query journey documents and requirements",
+        "description": "Ask natural language questions about documents or requirements for a specific Fenergo customer journey. Provide a journey ID (GUID) and your question.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["data"],
+                "properties": {
+                  "data": {
+                    "type": "object",
+                    "required": ["message", "scope"],
+                    "properties": {
+                      "message": {
+                        "type": "string",
+                        "description": "Your natural language question about the journey. Should include or reference the journey ID.",
+                        "example": "What documents are required for journey 5a5caba1-623f-45c5-8e02-592fb6c4dc61?"
+                      },
+                      "scope": {
+                        "type": "object",
+                        "required": ["documentContext"],
+                        "properties": {
+                          "documentContext": {
+                            "type": "object",
+                            "required": ["contextLevel", "contextId"],
+                            "properties": {
+                              "contextLevel": {
+                                "type": "string",
+                                "enum": ["Journey"],
+                                "description": "Always use 'Journey' for journey-level queries"
+                              },
+                              "contextId": {
+                                "type": "string",
+                                "format": "uuid",
+                                "description": "The journey ID (GUID) to query",
+                                "example": "5a5caba1-623f-45c5-8e02-592fb6c4dc61"
+                              }
+                            }
+                          },
+                          "documentRequirementContext": {
+                            "type": "object",
+                            "nullable": true,
+                            "description": "Optional: Include this for requirement-specific queries",
+                            "properties": {
+                              "contextLevel": {
+                                "type": "string",
+                                "enum": ["Journey"]
+                              },
+                              "contextId": {
+                                "type": "string",
+                                "format": "uuid"
+                              }
+                            }
+                          }
+                        }
+                      },
+                      "conversationHistory": {
+                        "type": "array",
+                        "description": "Conversation history for context (usually empty for new queries)",
+                        "items": {
+                          "type": "object"
+                        },
+                        "default": []
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response with AI-generated insights",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "response": {
+                          "type": "string",
+                          "description": "Natural language response about the journey documents or requirements"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required - user needs to authenticate via SSO",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "example": "Unauthorized: No authentication token provided. Please authenticate first using SSO."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request - missing required fields or invalid journey ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "operationId": "initiateSSO",
+        "summary": "Initiate SSO authentication",
+        "description": "Start the OAuth/OIDC SSO flow to authenticate with Fenergo. Returns an authorization URL that the user must visit in their browser.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["tenantId"],
+                "properties": {
+                  "tenantId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "Fenergo tenant ID",
+                    "example": "f488cdba-2122-448d-952c-7a2a47f78f1b"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "SSO authorization URL generated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "authorizationUrl": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "URL to visit for browser-based SSO authentication"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "OAuth 2.0 Bearer token obtained via SSO authentication"
+      }
+    }
+  }
+}
