@@ -22,7 +22,9 @@
       "Bash(FENERGO_TENANT_ID=f488cdba-2122-448d-952c-7a2a47f78f1b FENERGO_CLIENT_SECRET=d67105c0-52ca-164e-d0ea-b107cbbfdbc3 timeout 3 node:*)",
       "Bash(powershell -Command \"Test-Path ''%APPDATA%\\Claude\\claude_desktop_config.json''\")",
       "Bash(dir \"%LOCALAPPDATA%\\Claude\")",
-      "Bash(FENERGO_TENANT_ID=f488cdba-2122-448d-952c-7a2a47f78f1b APPRUNNER_URL=https://tc8srxrkcp.eu-west-1.awsapprunner.com node start-sso-flow.js)"
+      "Bash(FENERGO_TENANT_ID=f488cdba-2122-448d-952c-7a2a47f78f1b APPRUNNER_URL=https://tc8srxrkcp.eu-west-1.awsapprunner.com node start-sso-flow.js)",
+      "Bash(git rm -rf \"%APPDATA%/\")",
+      "Bash(git rm:*)"
     ],
     "deny": [],
     "ask": []
